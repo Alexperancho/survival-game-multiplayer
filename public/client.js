@@ -179,7 +179,19 @@ function bindSocket(){
   });
 
   socket.on('your_turn', ({ hand })=>{ MY_HAND = hand; });
-  socket.on('table_update', ({ pid, card })=>{});
+  socket.on('table_update', ({ pid, card })=>{
+  if (pid === socket.id) {
+    const idx = MY_HAND.indexOf(card);
+    if (idx !== -1) MY_HAND.splice(idx, 1);
+    const mh = document.getElementById('myHand');
+    if (mh) {
+      mh.innerHTML = '';
+      (MY_HAND || []).forEach(c => mh.appendChild(cardNode(c)));
+      const hint = document.getElementById('playHint');
+      if (hint) hint.textContent = 'Played. Waiting for others...';
+    }
+  }
+});
   socket.on('trick_result', ({ winner })=>{ toast(`${winner.name} won the hand`); });
 
   socket.on('round_summary', ({ round, rows, over, winner })=>{
