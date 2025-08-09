@@ -8,47 +8,75 @@
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
+  <!-- Global overview bar -->
+  <header id="overview" class="overview">
+    <div class="left">
+      <span id="roomName" class="roomname"></span>
+      <span id="roomCodeGlobal" class="pill code">—</span>
+      <button id="copyCode" class="mini">Copy</button>
+    </div>
+    <div class="center">
+      <span id="ovRound" class="pill">Round —</span>
+      <span id="ovHand" class="pill">Hand —/—</span>
+      <span id="ovStarter" class="pill">Starter —</span>
+      <span id="ovTurn" class="pill">Turn —</span>
+    </div>
+    <div class="right">
+      <button id="btnRoundHelp" class="mini">?</button>
+      <select id="langSelect">
+        <option value="en">EN</option>
+        <option value="es">ES</option>
+      </select>
+      <button id="btnIntro" class="mini">Instructions</button>
+    </div>
+  </header>
+
   <div class="wrap">
     <section id="view-join" class="panel">
-      <h1>Welcome</h1>
-      <div class="grid2">
+      <h1 data-i18n="welcome_title">Welcome</h1>
+      <div class="grid3">
         <div>
-          <label>Your name</label>
+          <label data-i18n="your_name">Your name</label>
           <input id="playerName" maxlength="20" placeholder="Alice" />
         </div>
         <div>
-          <label>Room code (to join an existing room)</label>
+          <label data-i18n="room_name_opt">Room name (optional)</label>
+          <input id="roomNameInput" maxlength="40" placeholder="Friday Night" />
+        </div>
+        <div>
+          <label data-i18n="room_code_join">Room code (to join)</label>
           <input id="roomCode" maxlength="8" placeholder="e.g. ZETA42" />
         </div>
       </div>
       <div class="row">
-        <button id="btnCreate">Create room</button>
-        <button id="btnJoin" class="secondary">Join room</button>
+        <button id="btnCreate" data-i18n="create_room">Create room</button>
+        <button id="btnJoin" class="secondary" data-i18n="join_room">Join room</button>
+        <button id="btnOpenIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
       </div>
-      <p class="muted">Create a new room (we'll generate the code), or join an existing one with its code.</p>
+      <p class="muted" data-i18n="join_hint">Create a new room (we'll generate the code), or join an existing one with its code.</p>
     </section>
 
     <section id="view-lobby" class="panel hidden">
-      <h1>Lobby <span id="roomCodeBadge" class="pill"></span></h1>
+      <h1><span data-i18n="lobby">Lobby</span> <span id="roomCodeBadge" class="pill"></span></h1>
       <div id="playersLobby" class="row"></div>
       <div id="hostControls" class="hidden">
         <div class="grid2">
           <div>
-            <label>Number of players (2–10)</label>
+            <label data-i18n="num_players">Number of players (2–10)</label>
             <input id="seatCount" type="number" min="2" max="10" value="4" />
           </div>
           <div>
-            <label>Starting lives</label>
+            <label data-i18n="starting_lives">Starting lives</label>
             <input id="startingLives" type="number" min="1" max="99" value="7" />
           </div>
         </div>
         <div class="row" style="margin-top:8px">
-          <button id="btnConfigure" class="">Apply settings</button>
-          <button id="btnStart" class="secondary">Start now (manual)</button>
+          <button id="btnConfigure" class="" data-i18n="apply_settings">Apply settings</button>
+          <button id="btnStart" class="secondary" data-i18n="start_now">Start now (manual)</button>
         </div>
         <p class="muted" id="fillHint"></p>
       </div>
-      <p class="muted">Share this page + room code with your friends.</p>
+      <p class="muted" data-i18n="share_hint">Share this page + room code with your friends.</p>
     </section>
 
     <section id="view-preround" class="panel hidden">
@@ -64,25 +92,41 @@
 
     <section id="view-play" class="panel hidden">
       <div class="row">
-        <h1>Play</h1>
-        <span id="roundPill" class="pill"></span>
-        <span id="starterPill" class="pill"></span>
-        <span id="turnPill" class="pill"></span>
+        <h1 data-i18n="play">Play</h1>
       </div>
       <div class="table" id="table"></div>
-      <h3>Your hand</h3>
+      <h3 data-i18n="your_hand">Your hand</h3>
       <div class="cards" id="myHand"></div>
       <div id="playHint" class="muted" style="margin-top:6px"></div>
       <div class="divider"></div>
-      <h3>Summary</h3>
-      <table class="summary"><thead><tr><th>Player</th><th>Wins</th><th>Ask Δ</th><th>Lives</th></tr></thead><tbody id="sumBody"></tbody></table>
+      <h3 data-i18n="summary">Summary</h3>
+      <table class="summary"><thead><tr><th data-i18n="player">Player</th><th data-i18n="wins">Wins</th><th data-i18n="ask_delta">Ask Δ</th><th data-i18n="lives">Lives</th><th data-i18n="bid">Bid</th></tr></thead><tbody id="sumBody"></tbody></table>
+      <div class="divider"></div>
+      <h3 data-i18n="hand_log">Hand log</h3>
+      <div id="handLog" class="handlog"></div>
     </section>
 
     <section id="view-summary" class="panel hidden">
-      <h1>Round summary</h1>
+      <h1 data-i18n="round_summary">Round summary</h1>
       <div id="roundBox"></div>
-      <div class="row"><button id="btnNextRound" class="">Next round</button></div>
+      <div class="row"><button id="btnNextRound" class="" data-i18n="next_round">Next round</button></div>
     </section>
+  </div>
+
+  <!-- Intro / Instructions Modal -->
+  <div id="introModal" class="modal hidden">
+    <div class="modal-content">
+      <button class="close" id="closeIntro">×</button>
+      <div id="introBody"></div>
+    </div>
+  </div>
+
+  <!-- Round Help Modal -->
+  <div id="roundModal" class="modal hidden">
+    <div class="modal-content">
+      <button class="close" id="closeRound">×</button>
+      <div id="roundBody"></div>
+    </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>

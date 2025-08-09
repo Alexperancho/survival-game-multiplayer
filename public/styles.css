@@ -1,11 +1,21 @@
 :root{ --bg:#0f1220; --panel:#181b2e; --ink:#e6e8ff; --muted:#9aa0c7; --accent:#7aa2ff; --warn:#ffb86b; --danger:#ff6b6b; }
 *{ box-sizing:border-box }
 body{ margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial; background:var(--bg); color:var(--ink) }
-.wrap{ max-width:900px; margin:0 auto; padding:16px }
-.panel{ background:var(--panel); border:1px solid #2a2f52; border-radius:16px; padding:16px; box-shadow:0 4px 16px rgba(0,0,0,.25); margin-bottom:14px }
+
+/* Overview bar */
+.overview{ position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 12px; background:#0c0f1d; border-bottom:1px solid #2a2f52 }
+.overview .roomname{ font-weight:800; margin-right:6px }
+.overview .left, .overview .center, .overview .right{ display:flex; align-items:center; gap:8px; flex-wrap:wrap }
+.overview .chips{ display:flex; gap:6px; flex-wrap:wrap; margin-left:auto }
+.overview .mini{ background:#2a2f52; color:var(--ink); border:none; padding:6px 10px; border-radius:999px; cursor:pointer; font-weight:700 }
+.pill.code{ background:#25305e; }
+
+.wrap{ max-width:960px; margin:0 auto; padding:16px }
+.panel{ background:var(--panel); border:1px solid #2a2f52; border-radius:16px; padding:16px; box-shadow:0 4px 16px rgba(0,0,0,.25); margin:14px auto }
 .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
+.grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px }
 label{ display:block; margin:.4rem 0 .2rem; color:var(--muted) }
-input{ font:inherit; width:100%; padding:8px 10px; border-radius:10px; border:1px solid #30355e; background:#0c0f1d; color:var(--ink) }
+input, select{ font:inherit; width:100%; padding:8px 10px; border-radius:10px; border:1px solid #30355e; background:#0c0f1d; color:var(--ink) }
 button{ background:var(--accent); border:none; color:#061230; padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:700 }
 button.secondary{ background:#2a2f52; color:var(--ink) }
 button:disabled{ opacity:.5; cursor:not-allowed }
@@ -20,7 +30,25 @@ button:disabled{ opacity:.5; cursor:not-allowed }
 .card .suit{ font-size:16px }
 .card.red{ color:#c1121f }
 .card.back{ background:repeating-linear-gradient(45deg,#d9e2ff,#d9e2ff 6px,#b9c7ff 6px,#b9c7ff 12px); color:#2b2d42; font-weight:800 }
+.cardwrap .small{ font-size:12px; color:var(--muted); margin-left:4px; margin-bottom:4px }
+
 .table{ display:flex; gap:10px; flex-wrap:wrap; min-height:100px; padding:10px; background:#10142a; border-radius:12px; border:1px dashed #39406e }
 .summary{ width:100%; border-collapse:collapse }
 .summary th, .summary td{ padding:6px 8px; border-bottom:1px solid #2a2f52; text-align:left }
 .toast{ position:fixed; right:16px; bottom:16px; background:#11152a; border:1px solid #39406e; color:var(--ink); padding:10px 14px; border-radius:12px; box-shadow:0 8px 25px rgba(0,0,0,.4) }
+
+/* Modals */
+.modal{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55) }
+.modal.hidden{ display:none }
+.modal .modal-content{ width:min(900px, 92vw); max-height:82vh; overflow:auto; background:var(--panel); border:1px solid #2a2f52; border-radius:16px; padding:16px; position:relative }
+.modal .close{ position:absolute; right:10px; top:8px; background:#2a2f52; color:var(--ink); border:none; border-radius:12px; padding:6px 10px; cursor:pointer }
+
+/* Hand log */
+.handlog{ background:#0e1328; border:1px solid #2a2f52; border-radius:12px; padding:8px; max-height:200px; overflow:auto }
+.logentry{ padding:6px 8px; border-bottom:1px dashed #2a2f52 }
+.logentry:last-child{ border-bottom:none }
+
+@media (max-width:720px){
+  .grid3{ grid-template-columns:1fr }
+  .overview .center{ display:none }
+}
