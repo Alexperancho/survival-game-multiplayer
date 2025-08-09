@@ -27,6 +27,7 @@ function ensureRoom(code){
       status: 'lobby', // lobby | preround | bids | play | summary | over
       hostId: null,
       startingLives: 7,
+      targetSeats: null, // number of players expected; auto-start when reached
       round: 5,
       firstRound: true,
       lastFirstSpeaker: null,
@@ -275,7 +276,49 @@ function advanceRound(room){
   beginPreRound(room);
 }
 
+function generateRoomCode(){
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code='';
+  do { code = Array.from({length:6}, ()=> alphabet[Math.floor(Math.random()*(alphabet.length))]).join(''); } while(rooms.has(code));
+  return code;
+}
+
+function maybeAutoStart(room){
+  if(room.status!=='lobby') return;
+  if(!room.targetSeats) return;
+  const count = room.players.size;
+  if(count >= room.targetSeats){
+    // Start automatically
+    room.round=5; room.firstRound=true; room.lastFirstSpeaker=null;
+    beginPreRound(room);
+    setTimeout(()=> beginBids(room), 200);
+  }
+}
+
+// ----------------- Sockets -----------------
 io.on('connection', (socket)=>{
+  // Host creates a room (gets generated code)
+  socket.on('create_room', ({ name })=>{
+    const code = generateRoomCode();
+    const room = ensureRoom(code);
+
+    const player = {
+      id: socket.id,
+      name: (name||'Player').slice(0,20),
+      lives: room.startingLives,
+      eliminated: false,
+      hand: [], wins: 0, bid: null, r1Guess: null,
+      token: cryptoRandom()
+    };
+    room.players.set(socket.id, player);
+    if(!room.hostId) room.hostId = socket.id;
+
+    socket.join(code);
+    socket.emit('room_created', { code, host: true, token: player.token, startingLives: room.startingLives });
+    io.to(code).emit('room_state', { players: playerList(room), hostId: room.hostId, status: room.status, round: room.round, startingLives: room.startingLives, targetSeats: room.targetSeats });
+  });
+
+  // Anyone joins an existing room code
   socket.on('join_room', ({ roomCode, name, token })=>{
     const code = (roomCode||'').trim().toUpperCase(); if(!code) return;
     const room = ensureRoom(code);
@@ -300,7 +343,7 @@ io.on('connection', (socket)=>{
         name: (name||'Player').slice(0,20),
         lives: room.startingLives,
         eliminated: false,
-        hand: [], wins: 0, bid: null, r1Guess: null,
+               hand: [], wins: 0, bid: null, r1Guess: null,
         token: cryptoRandom()
       };
       room.players.set(socket.id, player);
@@ -309,7 +352,30 @@ io.on('connection', (socket)=>{
 
     socket.join(code);
     socket.emit('joined', { code, host: room.hostId===socket.id, token: room.players.get(socket.id).token, startingLives: room.startingLives });
-    io.to(code).emit('room_state', { players: playerList(room), hostId: room.hostId, status: room.status, round: room.round });
+    io.to(code).emit('room_state', { players: playerList(room), hostId: room.hostId, status: room.status, round: room.round, startingLives: room.startingLives, targetSeats: room.targetSeats });
+
+    maybeAutoStart(room);
+  });
+
+  // Host configures seats + lives
+  socket.on('configure_room', ({ roomCode, seats, lives })=>{
+    const room = rooms.get(roomCode); if(!room || room.hostId!==socket.id || room.status!=='lobby') return;
+    const minSeats = Math.max(2, room.players.size);
+    const S = Math.min(10, Math.max(minSeats, seats|0));
+    const L = Math.max(1, Math.min(99, lives|0));
+    room.targetSeats = S;
+    room.startingLives = L;
+    for(const p of room.players.values()) if(!p.eliminated) p.lives=L; // refresh lobby lives
+    io.to(room.code).emit('room_state', { players: playerList(room), hostId: room.hostId, status: room.status, round: room.round, startingLives:L, targetSeats:S });
+    maybeAutoStart(room);
+  });
+
+  // (Legacy) host can still press Start manually
+  socket.on('start_game', ({ roomCode })=>{
+    const room = rooms.get(roomCode); if(!room || room.hostId!==socket.id) return;
+    room.round=5; room.firstRound=true; room.lastFirstSpeaker=null;
+    beginPreRound(room);
+    setTimeout(()=> beginBids(room), 200);
   });
 
   socket.on('set_lives', ({ roomCode, lives })=>{
@@ -317,15 +383,7 @@ io.on('connection', (socket)=>{
     const L = Math.max(1, Math.min(99, lives|0));
     room.startingLives = L;
     for(const p of room.players.values()) if(!p.eliminated) p.lives=L;
-    io.to(room.code).emit('room_state', { players: playerList(room), hostId: room.hostId, status: room.status, round: room.round, startingLives:L });
-  });
-
-  socket.on('start_game', ({ roomCode })=>{
-    const room = rooms.get(roomCode); if(!room || room.hostId!==socket.id) return;
-    if(room.players.size<2){ io.to(socket.id).emit('error_msg',{message:'Need at least 2 players'}); return; }
-    room.round=5; room.firstRound=true; room.lastFirstSpeaker=null;
-    beginPreRound(room);
-    setTimeout(()=> beginBids(room), 200);
+    io.to(room.code).emit('room_state', { players: playerList(room), hostId: room.hostId, status: room.status, round: room.round, startingLives:L, targetSeats: room.targetSeats });
   });
 
   socket.on('submit_bid', ({ roomCode, value })=>{
@@ -334,7 +392,7 @@ io.on('connection', (socket)=>{
     if(pid!==socket.id) return; // not your turn
     let v = Math.max(0, Math.min(room.round, value|0));
     const last = idx===ord.length-1;
-    if(last && room.bidding.sum + v === room.round){ io.to(socket.id).emit('error_msg',{message:"You're a fool! Pick a different number."}); return; }
+       if(last && room.bidding.sum + v === room.round){ io.to(socket.id).emit('error_msg',{message:"You're a fool! Pick a different number."}); return; }
     const p = room.players.get(pid); p.bid = v; room.bidding.sum += v;
     room.bidding.idx++;
     if(room.bidding.idx < ord.length){ promptBid(room); } else { maybeStartPlay(room); }
@@ -376,7 +434,7 @@ io.on('connection', (socket)=>{
   });
 
   socket.on('disconnect', ()=>{
-    // Seats are kept for reconnection via token
+    // Keep seats for simple reconnection by token
   });
 });
 

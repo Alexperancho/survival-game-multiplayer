@@ -14,35 +14,74 @@ function cardNode(code, click){
   return n;
 }
 
-// Join
-document.getElementById('btnJoin').onclick = ()=>{
+function connect(){ if(!socket){ socket = io(); bindSocket(); } }
+
+// Create room
+$('#btnCreate').onclick = ()=>{
+  const name = (document.getElementById('playerName').value||'Player').trim();
+  if(!name){ toast('Enter your name'); return; }
+  connect();
+  socket.emit('create_room', { name });
+};
+
+// Join room
+$('#btnJoin').onclick = ()=>{
   ROOM = (document.getElementById('roomCode').value||'').trim().toUpperCase();
   const name = (document.getElementById('playerName').value||'Player').trim();
   if(!ROOM){ toast('Enter room code'); return; }
-  socket = io();
+  connect();
   const token = localStorage.getItem('sg_token_'+ROOM) || null;
   socket.emit('join_room', { roomCode: ROOM, name, token });
+};
+
+function bindSocket(){
+  socket.on('room_created', ({ code, host, token, startingLives })=>{
+    ROOM = code; ME.id = socket.id; ME.name = (document.getElementById('playerName').value||'Player').trim(); ME.host = host; ME.token = token;
+    localStorage.setItem('sg_token_'+ROOM, token);
+    document.getElementById('roomCodeBadge').textContent = code;
+    show('view-join', false); show('view-lobby', true);
+    show('hostControls', true);
+    document.getElementById('startingLives').value = startingLives;
+    updateFillHint();
+  });
 
   socket.on('joined', ({ code, host, token, startingLives })=>{
-    ME.id = socket.id; ME.name = name; ME.host = host; ME.token = token;
+    ROOM = code; ME.id = socket.id; ME.name = (document.getElementById('playerName').value||'Player').trim(); ME.host = host; ME.token = token;
     localStorage.setItem('sg_token_'+ROOM, token);
     document.getElementById('roomCodeBadge').textContent = code;
     if(host){ show('hostControls', true); document.getElementById('startingLives').value = startingLives; }
     show('view-join', false); show('view-lobby', true);
   });
 
-  socket.on('room_state', ({ players, hostId, status, round, startingLives })=>{
+  socket.on('room_state', ({ players, hostId, status, round, startingLives, targetSeats })=>{
     const box = document.getElementById('playersLobby'); box.innerHTML='';
     players.forEach(p=>{
       const div=document.createElement('div'); div.className='pill';
       if(p.isHost) div.innerHTML = `\u2605 ${p.name}`; else div.textContent = p.name;
       box.appendChild(div);
     });
+    if(ME.id===hostId){ show('hostControls', true); }
+
+    // Update fill hint (X / seats)
+    if(typeof targetSeats==='number' && targetSeats>0){
+      document.getElementById('fillHint').textContent = `Players joined: ${players.length} / ${targetSeats}. The game will auto-start when full.`;
+    } else {
+      document.getElementById('fillHint').textContent = 'Set number of players and lives, then share the code.';
+    }
   });
 
-  document.getElementById('btnSetLives').onclick = ()=>{
-    const L = +document.getElementById('startingLives').value|0; socket.emit('set_lives', { roomCode: ROOM, lives: L }); };
+  // Host config
+  document.getElementById('btnConfigure').onclick = ()=>{
+    const seats = +document.getElementById('seatCount').value|0;
+    const lives = +document.getElementById('startingLives').value|0;
+    socket.emit('configure_room', { roomCode: ROOM, seats, lives });
+  };
   document.getElementById('btnStart').onclick = ()=> socket.emit('start_game', { roomCode: ROOM });
+
+  function updateFillHint(){
+    const seats = +document.getElementById('seatCount').value|0;
+    document.getElementById('fillHint').textContent = `Waiting for players... target: ${seats}. It will auto-start when ${seats} have joined.`;
+  }
 
   socket.on('preround_state', ({ round, firstSpeaker, order, players })=>{
     show('view-lobby', false); show('view-summary', false); show('view-preround', true);
@@ -86,7 +125,7 @@ document.getElementById('btnJoin').onclick = ()=>{
   socket.on('r1_state', ({ order })=>{
     show('view-preround', false); show('view-play', false); show('view-bids', true);
     document.getElementById('hdrBids').textContent='Round 1 — Yes / No';
-    document.getElementById('bidsArea').innerHTML = '<p class="muted">Look at others\\' cards and answer.</p>';
+    document.getElementById('bidsArea').innerHTML = '<p class="muted">Look at others\' cards and answer.</p>';
   });
 
   socket.on('r1_prompt', ({ others })=>{
@@ -156,4 +195,4 @@ document.getElementById('btnJoin').onclick = ()=>{
 
   document.getElementById('btnNextRound').onclick = ()=> socket.emit('next_round', { roomCode: ROOM });
   socket.on('error_msg', ({ message })=> toast(message));
-};
+}

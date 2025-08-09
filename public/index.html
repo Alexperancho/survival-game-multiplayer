@@ -10,33 +10,45 @@
 <body>
   <div class="wrap">
     <section id="view-join" class="panel">
-      <h1>Join a Room</h1>
+      <h1>Welcome</h1>
       <div class="grid2">
-        <div>
-          <label>Room code</label>
-          <input id="roomCode" maxlength="8" placeholder="e.g. ZETA42" />
-        </div>
         <div>
           <label>Your name</label>
           <input id="playerName" maxlength="20" placeholder="Alice" />
         </div>
+        <div>
+          <label>Room code (to join an existing room)</label>
+          <input id="roomCode" maxlength="8" placeholder="e.g. ZETA42" />
+        </div>
       </div>
       <div class="row">
-        <button id="btnJoin">Join</button>
+        <button id="btnCreate">Create room</button>
+        <button id="btnJoin" class="secondary">Join room</button>
       </div>
-      <p class="muted">First player to join becomes host. Share the room code with friends.</p>
+      <p class="muted">Create a new room (we'll generate the code), or join an existing one with its code.</p>
     </section>
 
     <section id="view-lobby" class="panel hidden">
       <h1>Lobby <span id="roomCodeBadge" class="pill"></span></h1>
       <div id="playersLobby" class="row"></div>
       <div id="hostControls" class="hidden">
-        <label>Starting lives</label>
-        <input id="startingLives" type="number" min="1" max="99" value="7" />
-        <button id="btnSetLives" class="secondary">Apply</button>
-        <button id="btnStart" class="">Start game</button>
+        <div class="grid2">
+          <div>
+            <label>Number of players (2–10)</label>
+            <input id="seatCount" type="number" min="2" max="10" value="4" />
+          </div>
+          <div>
+            <label>Starting lives</label>
+            <input id="startingLives" type="number" min="1" max="99" value="7" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="btnConfigure" class="">Apply settings</button>
+          <button id="btnStart" class="secondary">Start now (manual)</button>
+        </div>
+        <p class="muted" id="fillHint"></p>
       </div>
-      <p class="muted">Need at least 2 players.</p>
+      <p class="muted">Share this page + room code with your friends.</p>
     </section>
 
     <section id="view-preround" class="panel hidden">

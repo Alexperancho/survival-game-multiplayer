@@ -1,6 +1,6 @@
 :root{ --bg:#0f1220; --panel:#181b2e; --ink:#e6e8ff; --muted:#9aa0c7; --accent:#7aa2ff; --warn:#ffb86b; --danger:#ff6b6b; }
 *{ box-sizing:border-box }
-body{ margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial; background:var(--bg); color:var(--ink); }
+body{ margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial; background:var(--bg); color:var(--ink) }
 .wrap{ max-width:900px; margin:0 auto; padding:16px }
 .panel{ background:var(--panel); border:1px solid #2a2f52; border-radius:16px; padding:16px; box-shadow:0 4px 16px rgba(0,0,0,.25); margin-bottom:14px }
 .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px }
