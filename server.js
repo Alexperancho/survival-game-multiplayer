@@ -15,7 +15,12 @@ app.use(express.static('public'));
 const RANKS = ['A','2','3','4','5','6','7','8','9','T','J','Q','K'];
 const RANK_VAL = Object.fromEntries(RANKS.map((r,i)=>[r,i+1])); // A=1 lowest
 const SUITS = ['S','H','D','C'];
-const deck52 = ()=>{ const d=[]; for(const s of SUITS) for(const r of RANKS) d.push(r+s); return d };
+
+const deck52 = ()=>{
+  const d=[];
+  for(const s of SUITS) for(const r of RANKS) d.push(r+s);
+  return d;
+};
 const shuffle = arr => { for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr };
 
 // roomCode -> roomState
@@ -104,13 +109,17 @@ function beginPreRound(room){
   chooseFirstSpeaker(room);
   deal(room);
   room.order = speakingOrderFrom(room, room.firstSpeaker);
+
   io.to(room.code).emit('preround_state', {
     roomName: room.roomName,
     round: room.round,
     firstSpeaker: room.firstSpeaker,
     order: room.order.map(id=> ({ id, name: room.players.get(id).name })),
-    players: playerList(room)
+    players: playerList(room),
+    // Mostrar sorteo/ruleta sólo la primera vez (random puro)
+    raffle: (room.lastFirstSpeaker===null)
   });
+
   // mano privada a cada jugador
   for(const p of room.players.values()){
     io.to(p.id).emit('private_hand', { hand: p.hand });
@@ -130,6 +139,7 @@ function beginBids(room){
 function promptBid(room){
   const ord = room.bidding.order; const idx = room.bidding.idx;
   const pid = ord[idx]; const last = idx===ord.length-1;
+
   io.to(room.code).emit('bids_state', {
     roomName: room.roomName,
     round: room.round,
@@ -139,6 +149,7 @@ function promptBid(room){
     bids: ord.map(id=>({ id, name: room.players.get(id).name, bid: room.players.get(id).bid })),
     players: playerList(room)
   });
+
   const p = room.players.get(pid);
   io.to(pid).emit('bid_prompt', {
     round: room.round,
@@ -351,7 +362,7 @@ io.on('connection', (socket)=>{
 
     // Auto-start cuando se llena DESPUÉS de Apply settings
     if(room.status==='lobby' && room.settingsApplied && typeof room.targetSeats==='number' && room.players.size >= room.targetSeats){
-      io.to(room.code).emit('error_msg', { message: '¡Sala completa! Comienza la partida…' });
+      io.to(room.code).emit('autostart'); // burbuja centrada 800ms en cliente
       setTimeout(()=>{
         room.round=5; room.firstRound=true; room.lastFirstSpeaker=null;
         beginPreRound(room);
@@ -372,9 +383,9 @@ io.on('connection', (socket)=>{
     for(const p of room.players.values()) if(!p.eliminated) p.lives=L;
     io.to(room.code).emit('room_state', { roomName: room.roomName, players: playerList(room), hostId: room.hostId, status: room.status, round: room.round, startingLives:L, targetSeats:S });
 
-    // Auto-start si ya está lleno
+    // Auto-start si ya está lleno al aplicar
     if(room.players.size >= S){
-      io.to(room.code).emit('error_msg', { message: '¡Sala completa! Comienza la partida…' });
+      io.to(room.code).emit('autostart'); // burbuja centrada 800ms en cliente
       setTimeout(()=>{
         room.round=5; room.firstRound=true; room.lastFirstSpeaker=null;
         beginPreRound(room);
@@ -395,21 +406,25 @@ io.on('connection', (socket)=>{
     const room = rooms.get(roomCode); if(!room || room.status!=='bids' || room.round===1) return;
     const ord = room.bidding.order; const idx = room.bidding.idx; const pid = ord[idx];
     if(pid!==socket.id) return;
+
     let v = Math.max(0, Math.min(room.round, value|0));
     const last = idx===ord.length-1;
-    if(last && room.bidding.sum + v === room.round){ io.to(socket.id).emit('error_msg',{message:"You're a fool! Pick a different number."}); return; }
-    const p = room.players.get(pid); p.bid = v; room.bidding.sum += v;
+    if(last && room.bidding.sum + v === room.round){
+      io.to(socket.id).emit('error_msg',{message:"You're a fool! Pick a different number."});
+      return;
+    }
+
+    const p = room.players.get(pid);
+    p.bid = v; 
+    room.bidding.sum += v;
     room.bidding.idx++;
-    if(room.bidding.idx < ord.length){ promptBid(room); } else { beginPlay(room); }
-    io.to(room.code).emit('bids_state', {
-      roomName: room.roomName,
-      round: room.round,
-      current: ord[room.bidding.idx] ?? null,
-      sum: room.bidding.sum,
-      lastSpeaker: room.bidding.idx===ord.length-1,
-      bids: ord.map(id=>({ id, name: room.players.get(id).name, bid: room.players.get(id).bid })),
-      players: playerList(room)
-    });
+
+    // IMPORTANTE: no emitir aquí bids_state; promptBid() ya lo hace correctamente.
+    if(room.bidding.idx < ord.length){
+      promptBid(room);
+    } else {
+      beginPlay(room);
+    }
   });
 
   socket.on('r1_answer', ({ roomCode, answer })=>{
@@ -452,7 +467,7 @@ io.on('connection', (socket)=>{
   });
 
   socket.on('disconnect', ()=>{
-    // mantener token para reconexión sencilla
+    // mantenemos token para reconexión
   });
 });
 
