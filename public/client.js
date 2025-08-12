@@ -63,6 +63,7 @@ const I18N = {
     help_common: `Highest card wins the hand. Suits don't matter. Aces are the lowest. In a tie of the highest rank, the first card played wins.`,
     help_round2: `Speak your Win Asks **before** you see your two cards.`,
     help_round1: `You see everyone else's single card, but not your own. Answer Yes/No to "Do you think you will win?"`,
+    r1_question: "Do you think you're winning this hand?"
   },
   es: {
     welcome_title: "Bienvenido",
@@ -109,6 +110,7 @@ const I18N = {
     help_common: `La carta más alta gana la baza. Los palos no importan. Los ases son los más bajos. En empate del valor más alto, gana quien la jugó primero.`,
     help_round2: `En la Ronda 2 se declara la apuesta de manos **antes** de ver tus dos cartas.`,
     help_round1: `Ves la carta de los demás pero no la tuya. Responde Sí/No a “¿Crees que vas a ganar?”.`,
+    r1_question: "¿Crees que vas a ganar esta mano?"
   }
 };
 
@@ -464,11 +466,14 @@ function bindSocket(){
   socket.on('r1_prompt', ({ others, order })=>{
     const area = document.getElementById('bidsArea'); area.innerHTML='';
     const count = Object.keys(others).length;
+
+    // Título según número de oponentes
     const title = document.createElement('h3'); 
     title.textContent = count===1 ? (LANG==='es'?'La carta de tu oponente':'Your opponent\'s card') : (LANG==='es'?'Cartas de los oponentes':'Opponents\' cards');
     area.appendChild(title);
+
+    // Cartas de los demás + nombre debajo
     const wrap=document.createElement('div'); wrap.className='cards';
-    // label with names
     const idToName = {}; (order||[]).forEach(o=> idToName[o.id]=o.name);
     for(const [pid,card] of Object.entries(others)){
       const holder=document.createElement('div'); holder.className='cardwrap';
@@ -478,6 +483,11 @@ function bindSocket(){
       wrap.appendChild(holder);
     }
     area.appendChild(wrap);
+
+    // Pregunta + botones Sí/No
+    const q = document.createElement('p'); q.className='muted'; q.textContent = (LANG==='es' ? I18N.es.r1_question : I18N.en.r1_question);
+    area.appendChild(q);
+
     const row=document.createElement('div'); row.className='row';
     const yes=document.createElement('button'); yes.textContent=(LANG==='es'?'Sí':'Yes');
     const no=document.createElement('button'); no.textContent=(LANG==='es'?'No':'No'); no.className='secondary';
