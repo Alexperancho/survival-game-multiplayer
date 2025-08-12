@@ -164,15 +164,20 @@ function promptBid(room){
 function beginRound1YesNo(room){
   room.status='bids';
   const order = room.order.slice();
+
   io.to(room.code).emit('r1_state', { 
     roomName: room.roomName,
     order: order.map(id=>({id, name: room.players.get(id).name})) 
   });
+
   // a cada jugador le mostramos la carta de los demás
   for(const pid of order){
     const others = {};
     for(const qid of order){ if(qid===pid) continue; others[qid] = room.players.get(qid).hand[0]; }
-    io.to(pid).emit('r1_prompt', { others, order: order.map(x=>({id:x.id,name:room.players.get(x.id).name})) });
+    io.to(pid).emit('r1_prompt', { 
+      others, 
+      order: order.map(id=>({id, name: room.players.get(id).name})) // <- FIX: enviar id + name correctos
+    });
   }
 }
 
@@ -241,6 +246,7 @@ function resolveRound1(room){
   const top = topList[0];
   const winnerId = top.pid;
 
+  // En Ronda 1: solo pierden vida los que fallan su predicción (1 vida)
   for(const id of alive){
     const p = room.players.get(id);
     const predictedWin = (p.r1Guess==='YES');
@@ -419,7 +425,7 @@ io.on('connection', (socket)=>{
     room.bidding.sum += v;
     room.bidding.idx++;
 
-    // IMPORTANTE: no emitir aquí bids_state; promptBid() ya lo hace correctamente.
+    // No emitir aquí bids_state; promptBid() ya lo hace correctamente.
     if(room.bidding.idx < ord.length){
       promptBid(room);
     } else {
