@@ -406,7 +406,12 @@ function bindSocket(){
     show('view-preround', false); show('view-play', false); show('view-bids', true);
     show('overview', true);
     document.getElementById('hdrBids').textContent = `${(LANG==='es'?'Ronda':'Round')} 1 — ${(LANG==='es'?'Instrucciones':'Instructions')}`;
-    const area = document.getElementById('bidsArea'); area.innerHTML = `<p class="muted">${(LANG==='es'?'Mira las cartas de los demás y responde Sí/No.':'Look at others\\' cards and answer Yes/No.')}</p>`;
+    // FIX: usar comillas dobles para el apóstrofo en inglés (sin \\')
+    const area = document.getElementById('bidsArea'); 
+    area.innerHTML = `<p class="muted">${(LANG==='es'
+      ? 'Mira las cartas de los demás y responde Sí/No.'
+      : "Look at others' cards and answer Yes/No."
+    )}</p>`;
   });
 
   socket.on('r1_prompt', ({ others, order })=>{
