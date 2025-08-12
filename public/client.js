@@ -51,12 +51,10 @@ const I18N = {
     no: "No",
     copy: "Copy",
     copied: "Copied!",
-    // Round help snippets
     help_title: (r)=> `Round ${r}`,
     help_common: `Highest card wins the hand. Suits don't matter. Aces are the lowest. In a tie of the highest rank, the first card played wins.`,
     help_round2: `Speak your Win Asks **before** you see your two cards.`,
     help_round1: `You see everyone else's single card, but not your own. Answer Yes/No to "Do you think you will win?"`,
-    // Intro content placeholders will be injected as HTML
   },
   es: {
     welcome_title: "Bienvenido",
@@ -107,7 +105,8 @@ const I18N = {
 };
 
 let LANG = (localStorage.getItem('sg_lang') || (navigator.language||'en').slice(0,2)).toLowerCase().startsWith('es') ? 'es' : 'en';
-$('#langSelect').value = LANG;
+const langSelectEl = $('#langSelect');
+if(langSelectEl) langSelectEl.value = LANG;
 
 // Easy t()
 function t(key){
@@ -121,23 +120,20 @@ function applyI18n(){
     const val = t(key);
     if(typeof val === 'string') el.textContent = val;
   });
-  // Buttons that aren't data-i18n (header)
-  $('#btnIntro').textContent = t('instructions');
-  $('#btnOpenIntro').textContent = t('instructions');
-  $('#copyCode').textContent = t('copy');
   // Update placeholders
-  $('#roomCode').placeholder = (LANG==='es'?'p.ej. ZETA42':'e.g. ZETA42');
-  $('#roomNameInput').placeholder = (LANG==='es'?'Viernes por la noche':'Friday Night');
-  $('#playerName').placeholder = (LANG==='es'?'Alicia':'Alice');
+  const rc=$('#roomCode'); if(rc) rc.placeholder = (LANG==='es'?'p.ej. ZETA42':'e.g. ZETA42');
+  const rn=$('#roomNameInput'); if(rn) rn.placeholder = (LANG==='es'?'Viernes por la noche':'Friday Night');
+  const pn=$('#playerName'); if(pn) pn.placeholder = (LANG==='es'?'Alicia':'Alice');
 }
 applyI18n();
 
-$('#langSelect').addEventListener('change', ()=>{
-  LANG = $('#langSelect').value;
-  localStorage.setItem('sg_lang', LANG);
-  applyI18n();
-  // refresh instruction button text
-});
+if(langSelectEl){
+  langSelectEl.addEventListener('change', ()=>{
+    LANG = langSelectEl.value;
+    localStorage.setItem('sg_lang', LANG);
+    applyI18n();
+  });
+}
 
 // Intro / Instructions content
 function introHTML(){
@@ -194,15 +190,15 @@ function introHTML(){
 }
 
 function roundHelpHTML(round){
-  const hc = t('help_common');
+  const hc = (LANG==='es') ? I18N.es.help_common : I18N.en.help_common;
   if(LANG==='es'){
-    if(round===2) return `<h2>${t('help_title')(round)}</h2><p>${hc}</p><p>${I18N.es.help_round2}</p>`;
-    if(round===1) return `<h2>${t('help_title')(round)}</h2><p>${hc}</p><p>${I18N.es.help_round1}</p>`;
-    return `<h2>${t('help_title')(round)}</h2><p>${hc}</p>`;
+    if(round===2) return `<h2>${I18N.es.help_title(round)}</h2><p>${hc}</p><p>${I18N.es.help_round2}</p>`;
+    if(round===1) return `<h2>${I18N.es.help_title(round)}</h2><p>${hc}</p><p>${I18N.es.help_round1}</p>`;
+    return `<h2>${I18N.es.help_title(round)}</h2><p>${hc}</p>`;
   } else {
-    if(round===2) return `<h2>${t('help_title')(round)}</h2><p>${hc}</p><p>${I18N.en.help_round2}</p>`;
-    if(round===1) return `<h2>${t('help_title')(round)}</h2><p>${hc}</p><p>${I18N.en.help_round1}</p>`;
-    return `<h2>${t('help_title')(round)}</h2><p>${hc}</p>`;
+    if(round===2) return `<h2>${I18N.en.help_title(round)}</h2><p>${hc}</p><p>${I18N.en.help_round2}</p>`;
+    if(round===1) return `<h2>${I18N.en.help_title(round)}</h2><p>${hc}</p><p>${I18N.en.help_round1}</p>`;
+    return `<h2>${I18N.en.help_title(round)}</h2><p>${hc}</p>`;
   }
 }
 
@@ -242,27 +238,37 @@ $('#btnJoin').onclick = ()=>{
 // Intro modal
 function openIntro(){ $('#introBody').innerHTML = introHTML(); show('introModal', true); }
 function closeIntro(){ show('introModal', false); }
-$('#btnIntro').onclick = openIntro;
-$('#btnOpenIntro').onclick = openIntro;
+const btnOpenIntro = $('#btnOpenIntro');
+if(btnOpenIntro) btnOpenIntro.onclick = openIntro;
+const btnLobbyIntro = $('#btnLobbyIntro');
+if(btnLobbyIntro) btnLobbyIntro.onclick = openIntro;
 $('#closeIntro').onclick = closeIntro;
+// Close by clicking backdrop
+document.getElementById('introModal').addEventListener('click', (e)=>{
+  if(e.target.classList.contains('modal')) closeIntro();
+});
 
-// Round help modal
+// Round help modal (bottom bar "?")
 function openRoundHelp(){ const r = CURRENT_ROUND || 5; $('#roundBody').innerHTML = roundHelpHTML(r); show('roundModal', true); }
 function closeRoundHelp(){ show('roundModal', false); }
 $('#btnRoundHelp').onclick = openRoundHelp;
 $('#closeRound').onclick = closeRoundHelp;
+document.getElementById('roundModal').addEventListener('click', (e)=>{
+  if(e.target.classList.contains('modal')) closeRoundHelp();
+});
 
 // Copy room code
 $('#copyCode').onclick = ()=>{
   const code = $('#roomCodeGlobal').textContent.trim();
   if(!code || code==='—') return;
-  navigator.clipboard.writeText(code).then(()=> toast(t('copied')) );
+  navigator.clipboard.writeText(code).then(()=> toast((LANG==='es')?'¡Copiado!':'Copied!') );
 };
 
 function renderOverview({ round, trickN, starter, turn, players, roomName, code }){
+  // This bar lives at the bottom and is hidden on welcome/lobby
   $('#roomName').textContent = roomName ? roomName : '';
   $('#roomCodeGlobal').textContent = code || '—';
-  $('#ovRound').textContent = `${t('round')} ${round ?? '—'}`;
+  $('#ovRound').textContent = `${(LANG==='es'?'Ronda':'Round')} ${round ?? '—'}`;
   const totalHands = round || '—';
   $('#ovHand').textContent = `Hand ${trickN ?? 1}/${totalHands}`;
   const starterName = players?.find(p=>p.id===starter)?.name ?? '—';
@@ -271,7 +277,6 @@ function renderOverview({ round, trickN, starter, turn, players, roomName, code 
   $('#ovTurn').textContent = `Turn ${turnName}`;
   // Player chips
   const bar = document.getElementById('overview');
-  // remove existing chips
   bar.querySelectorAll('.chips').forEach(x=>x.remove());
   if(players){
     const chips = document.createElement('div');
@@ -279,7 +284,7 @@ function renderOverview({ round, trickN, starter, turn, players, roomName, code 
     players.forEach(p=>{
       const chip=document.createElement('div');
       chip.className='pill';
-      chip.textContent = `${p.name} · ${t('lives')}: ${p.lives} · ${t('wins')}: ${p.wins||0} · ${t('bid')}: ${p.bid==null?'—':p.bid}`;
+      chip.textContent = `${p.name} · ${(LANG==='es'?'Vidas':'Lives')}: ${p.lives} · ${(LANG==='es'?'Manos':'Wins')}: ${p.wins||0} · ${(LANG==='es'?'Apuesta':'Bid')}: ${p.bid==null?'—':p.bid}`;
       chips.appendChild(chip);
     });
     bar.appendChild(chips);
@@ -295,6 +300,7 @@ function bindSocket(){
     $('#roomCodeGlobal').textContent = code;
     $('#roomName').textContent = roomName || '';
     show('view-join', false); show('view-lobby', true);
+    show('overview', false); // hide footer in lobby
     show('hostControls', true);
     $('#startingLives').value = startingLives;
   });
@@ -306,6 +312,7 @@ function bindSocket(){
     $('#roomCodeGlobal').textContent = code;
     $('#roomName').textContent = roomName || '';
     show('view-join', false); show('view-lobby', true);
+    show('overview', false); // hide footer in lobby
   });
 
   socket.on('room_state', ({ roomName, players, hostId, status, round, startingLives, targetSeats })=>{
@@ -323,7 +330,8 @@ function bindSocket(){
     } else {
       document.getElementById('fillHint').textContent = LANG==='es'?'Indica jugadores y vidas y comparte el código.':'Set number of players and lives, then share the code.';
     }
-    renderOverview({ round, trickN: 1, starter: null, turn: null, players, roomName, code: $('#roomCodeGlobal').textContent });
+    // Keep footer hidden in lobby
+    show('overview', false);
   });
 
   // Host config
@@ -339,10 +347,11 @@ function bindSocket(){
     ORDER_CACHE = order || [];
     PLAYERS_CACHE = players || [];
     show('view-lobby', false); show('view-summary', false); show('view-preround', true);
-    document.getElementById('hdrRound').textContent = `${t('round')} ${round}`;
+    show('overview', true); // show footer from gameplay onwards
+    document.getElementById('hdrRound').textContent = `${(LANG==='es'?'Ronda':'Round')} ${round}`;
     const badges = document.getElementById('orderBadges'); badges.innerHTML='';
     order.forEach((o,i)=>{ const d=document.createElement('div'); d.className='pill'; d.textContent=(i===0?'▶ ':'')+o.name; badges.appendChild(d); });
-    const fs = order.find(o=>o.id===firstSpeaker); document.getElementById('firstSpeakerNote').textContent = `${t('first_speaker')}: ${fs? fs.name : '—'}`;
+    const fs = order.find(o=>o.id===firstSpeaker); document.getElementById('firstSpeakerNote').textContent = `${(LANG==='es'?'Primer hablante':'First speaker')}: ${fs? fs.name : '—'}`;
     renderOverview({ round, trickN: 1, starter: firstSpeaker, turn: firstSpeaker, players, roomName, code: $('#roomCodeGlobal').textContent });
   });
 
@@ -353,11 +362,12 @@ function bindSocket(){
     CURRENT_ROUND = round;
     PLAYERS_CACHE = players || [];
     show('view-preround', false); show('view-play', false); show('view-bids', true);
-    document.getElementById('hdrBids').textContent = `${t('round')} ${round} — ${t('bid')}`;
+    show('overview', true);
+    document.getElementById('hdrBids').textContent = `${(LANG==='es'?'Ronda':'Round')} ${round} — ${(LANG==='es'?'Apuesta':'Bid')}`;
     const area = document.getElementById('bidsArea'); area.innerHTML='';
     const meTurn = (current===socket.id);
     const p = document.createElement('div');
-    p.innerHTML = `<div class="pill">${t('current')}: ${meTurn? 'You' : 'Opponent'}</div><div class="pill">${t('total_so_far')}: ${sum}</div>`;
+    p.innerHTML = `<div class="pill">${(LANG==='es'?'Turno':'Current')}: ${meTurn? (LANG==='es'?'Tú':'You') : (LANG==='es'?'Oponente':'Opponent')}</div><div class="pill">${(LANG==='es'?'Suma parcial':'Total so far')}: ${sum}</div>`;
     area.appendChild(p);
 
     // Show list of bids so far
@@ -381,8 +391,8 @@ function bindSocket(){
 
     const row = document.createElement('div'); row.className='row';
     const inp = document.createElement('input'); inp.type='number'; inp.min=String(min); inp.max=String(max); inp.value='0'; inp.style.maxWidth='120px';
-    const btn = document.createElement('button'); btn.textContent=t('confirm_bid');
-    const info=document.createElement('div'); info.className='pill'; info.textContent = `${t('total_so_far')}: ${sum}`;
+    const btn = document.createElement('button'); btn.textContent=(LANG==='es'?'Confirmar apuesta':'Confirm bid');
+    const info=document.createElement('div'); info.className='pill'; info.textContent = `${(LANG==='es'?'Suma parcial':'Total so far')}: ${sum}`;
     row.append(inp, btn, info); area.appendChild(row);
 
     btn.onclick = ()=>{
@@ -394,15 +404,16 @@ function bindSocket(){
   socket.on('r1_state', ({ roomName, order })=>{
     ORDER_CACHE = order || [];
     show('view-preround', false); show('view-play', false); show('view-bids', true);
-    document.getElementById('hdrBids').textContent = `${t('round')} 1 — ${t('instructions')}`;
-    const area = document.getElementById('bidsArea'); area.innerHTML = `<p class="muted">${LANG==='es'?'Mira las cartas de los demás y responde Sí/No.':'Look at others\' cards and answer Yes/No.'}</p>`;
+    show('overview', true);
+    document.getElementById('hdrBids').textContent = `${(LANG==='es'?'Ronda':'Round')} 1 — ${(LANG==='es'?'Instrucciones':'Instructions')}`;
+    const area = document.getElementById('bidsArea'); area.innerHTML = `<p class="muted">${(LANG==='es'?'Mira las cartas de los demás y responde Sí/No.':'Look at others\\' cards and answer Yes/No.')}</p>`;
   });
 
   socket.on('r1_prompt', ({ others, order })=>{
     const area = document.getElementById('bidsArea'); area.innerHTML='';
     const count = Object.keys(others).length;
     const title = document.createElement('h3'); 
-    title.textContent = count===1 ? t('your_opponent_card') : t('opponents_cards');
+    title.textContent = count===1 ? (LANG==='es'?'La carta de tu oponente':'Your opponent\'s card') : (LANG==='es'?'Cartas de los oponentes':'Opponents\' cards');
     area.appendChild(title);
     const wrap=document.createElement('div'); wrap.className='cards';
     // label with names
@@ -416,8 +427,8 @@ function bindSocket(){
     }
     area.appendChild(wrap);
     const row=document.createElement('div'); row.className='row';
-    const yes=document.createElement('button'); yes.textContent=t('yes');
-    const no=document.createElement('button'); no.textContent=t('no'); no.className='secondary';
+    const yes=document.createElement('button'); yes.textContent=(LANG==='es'?'Sí':'Yes');
+    const no=document.createElement('button'); no.textContent=(LANG==='es'?'No':'No'); no.className='secondary';
     row.append(yes,no); area.appendChild(row);
     yes.onclick=()=> socket.emit('r1_answer', { roomCode: ROOM, answer:'YES' });
     no.onclick =()=> socket.emit('r1_answer', { roomCode: ROOM, answer:'NO'  });
@@ -425,6 +436,7 @@ function bindSocket(){
 
   socket.on('r1_reveal', ({ table, winner })=>{
     show('view-bids', false); show('view-play', true);
+    show('overview', true);
     const tbox=document.getElementById('table'); tbox.innerHTML='';
     table.forEach(pl=>{ const box=document.createElement('div'); box.className='playbox'; box.appendChild(cardNode(pl.card)); tbox.appendChild(box); });
   });
@@ -433,6 +445,7 @@ function bindSocket(){
     CURRENT_ROUND = round;
     PLAYERS_CACHE = players || [];
     show('view-bids', false); show('view-summary', false); show('view-play', true);
+    show('overview', true);
 
     // Fill table
     const t=document.getElementById('table'); t.innerHTML='';
@@ -452,10 +465,10 @@ function bindSocket(){
       (MY_HAND||[]).forEach(c=> mh.appendChild(cardNode(c, ()=>{
         socket.emit('play_card', { roomCode: ROOM, card: c });
       })) );
-      document.getElementById('playHint').textContent=t('pick_card');
+      document.getElementById('playHint').textContent=(LANG==='es'?'Elige una carta para jugar':'Pick a card to play');
     } else {
       (MY_HAND||[]).forEach(c=> mh.appendChild(cardNode(c)) );
-      document.getElementById('playHint').textContent=t('waiting');
+      document.getElementById('playHint').textContent=(LANG==='es'?'Esperando a los demás':'Waiting for other players');
     }
 
     // Overview bar
@@ -473,7 +486,7 @@ function bindSocket(){
         mh.innerHTML='';
         (MY_HAND||[]).forEach(c=> mh.appendChild(cardNode(c)) );
         const hint = document.getElementById('playHint');
-        if(hint) hint.textContent = t('waiting');
+        if(hint) hint.textContent = (LANG==='es'?'Esperando a los demás':'Waiting for other players');
       }
     }
   });
@@ -487,8 +500,8 @@ function bindSocket(){
     const ul=document.createElement('ul');
     plays.sort((a,b)=>a.order-b.order).forEach(pl=>{
       const name = (PLAYERS_CACHE.find(p=>p.id===pl.pid)||{}).name || '—';
-      const li=document.createElement('li');
       const rank = pl.card[0]==='T' ? '10' : pl.card[0];
+      const li=document.createElement('li');
       li.textContent = `${name} → ${rank}${pl.card[1]}`;
       ul.appendChild(li);
     });
@@ -499,13 +512,8 @@ function bindSocket(){
     const reason = document.createElement('div');
     reason.className='muted';
     reason.textContent = tieBreak 
-      ? `${winName} wins: tie at ${rank}, played first.`
-      : `${winName} wins with ${rank}.`;
-    if(LANG==='es'){
-      reason.textContent = tieBreak
-        ? `${winName} gana: empate en ${rank}, jugó primero.`
-        : `${winName} gana con ${rank}.`;
-    }
+      ? `${(LANG==='es')? `${winName} gana: empate en ${rank}, jugó primero.` : `${winName} wins: tie at ${rank}, played first.`}`
+      : `${(LANG==='es')? `${winName} gana con ${rank}.` : `${winName} wins with ${rank}.`}`;
     entry.appendChild(reason);
     box.appendChild(entry);
     // auto-scroll
@@ -514,12 +522,13 @@ function bindSocket(){
 
   socket.on('round_summary', ({ round, rows, over, winner })=>{
     show('view-play', false); show('view-summary', true);
+    show('overview', true);
     const box=document.getElementById('roundBox');
-    let html = `<div class="pill">${t('round')} ${round} ✓</div><div class="divider"></div>`;
-    html += '<table class="summary"><thead><tr><th>'+t('player')+'</th><th>'+t('wins')+'</th><th>'+t('bid')+'</th><th>'+t('lives')+'</th><th>Status</th></tr></thead><tbody>';
-    rows.forEach(r=>{ html += `<tr><td>${r.name}</td><td>${r.wins??'—'}</td><td>${r.bid??'—'}</td><td>${r.lives}</td><td>${r.eliminated?'Out':''}</td></tr>`; });
+    let html = `<div class="pill">${(LANG==='es'?'Ronda':'Round')} ${round} ✓</div><div class="divider"></div>`;
+    html += '<table class="summary"><thead><tr><th>'+((LANG==='es')?'Jugador':'Player')+'</th><th>'+((LANG==='es')?'Manos Ganadas':'Wins')+'</th><th>'+((LANG==='es')?'Apuesta':'Bid')+'</th><th>'+((LANG==='es')?'Vidas':'Lives')+'</th><th>Status</th></tr></thead><tbody>';
+    rows.forEach(r=>{ html += `<tr><td>${r.name}</td><td>${r.wins??'—'}</td><td>${r.bid??'—'}</td><td>${r.lives}</td><td>${r.eliminated?(LANG==='es'?'Fuera':'Out'):''}</td></tr>`; });
     html += '</tbody></table>';
-    if(over){ html += '<div class="divider"></div><h2>'+(winner? winner.name+' wins the game!':'Game over')+'</h2>'; document.getElementById('btnNextRound').disabled=true; } else { document.getElementById('btnNextRound').disabled=false; }
+    if(over){ html += '<div class="divider"></div><h2>'+(winner? winner.name+(LANG==='es'?' gana la partida!':' wins the game!'):(LANG==='es'?'Fin de la partida':'Game over'))+'</h2>'; document.getElementById('btnNextRound').disabled=true; } else { document.getElementById('btnNextRound').disabled=false; }
     box.innerHTML = html;
     // clear hand log for next round
     const log = document.getElementById('handLog'); if(log) log.innerHTML='';
@@ -528,6 +537,9 @@ function bindSocket(){
   document.getElementById('btnNextRound').onclick = ()=> socket.emit('next_round', { roomCode: ROOM });
   socket.on('error_msg', ({ message })=> toast(message));
 }
+
+// Ensure footer hidden on first load
+show('overview', false);
 
 // Initial i18n update
 applyI18n();
