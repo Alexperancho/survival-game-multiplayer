@@ -1,3 +1,4 @@
+// server.js
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
@@ -28,13 +29,14 @@ function ensureRoom(code){
       status: 'lobby', // lobby | preround | bids | play | summary | over
       hostId: null,
       startingLives: 7,
-      targetSeats: null, // number of players expected; auto-start when reached
+      targetSeats: null,            // objetivo de asientos
+      settingsApplied: false,       // el host hizo Apply settings
       round: 5,
       firstRound: true,
       lastFirstSpeaker: null,
       firstSpeaker: null,
-      players: new Map(), // socketId -> player
-      order: [], // speaking order socketIds for current round
+      players: new Map(),           // socketId -> player
+      order: [],                    // orden de habla para la ronda
       deck: [],
       bidding: { order: [], idx: 0, sum: 0 },
       play: { starter: null, turn: null, trickN: 1, plays: []}
@@ -109,7 +111,7 @@ function beginPreRound(room){
     order: room.order.map(id=> ({ id, name: room.players.get(id).name })),
     players: playerList(room)
   });
-  // Send each player their hand privately
+  // mano privada a cada jugador
   for(const p of room.players.values()){
     io.to(p.id).emit('private_hand', { hand: p.hand });
   }
@@ -134,7 +136,6 @@ function promptBid(room){
     current: pid,
     sum: room.bidding.sum,
     lastSpeaker: last,
-    // expose current bids publicly (these are spoken values)
     bids: ord.map(id=>({ id, name: room.players.get(id).name, bid: room.players.get(id).bid })),
     players: playerList(room)
   });
@@ -156,7 +157,7 @@ function beginRound1YesNo(room){
     roomName: room.roomName,
     order: order.map(id=>({id, name: room.players.get(id).name})) 
   });
-  // Send each player others' single card
+  // a cada jugador le mostramos la carta de los demás
   for(const pid of order){
     const others = {};
     for(const qid of order){ if(qid===pid) continue; others[qid] = room.players.get(qid).hand[0]; }
@@ -200,7 +201,6 @@ function resolveTrick(room){
   const winner = room.players.get(top.pid);
   winner.wins++;
 
-  // announce trick
   io.to(room.code).emit('trick_result', { 
     plays: plays.map(pl => ({ pid: pl.pid, card: pl.card, order: pl.order })),
     winner: { id:winner.id, name:winner.name },
@@ -208,7 +208,6 @@ function resolveTrick(room){
     tieBreak: topList.length>1
   });
 
-  // prepare next trick or end round
   room.play.starter = winner.id;
   room.play.turn = winner.id;
   room.play.plays = [];
@@ -288,7 +287,6 @@ function generateRoomCode(){
 
 // ----------------- Sockets -----------------
 io.on('connection', (socket)=>{
-  // Host creates a room (gets generated code)
   socket.on('create_room', ({ name, roomName })=>{
     const code = generateRoomCode();
     const room = ensureRoom(code);
@@ -310,12 +308,17 @@ io.on('connection', (socket)=>{
     io.to(code).emit('room_state', { roomName: room.roomName, players: playerList(room), hostId: room.hostId, status: room.status, round: room.round, startingLives: room.startingLives, targetSeats: room.targetSeats });
   });
 
-  // Anyone joins an existing room code
   socket.on('join_room', ({ roomCode, name, token })=>{
     const code = (roomCode||'').trim().toUpperCase(); if(!code) return;
     const room = ensureRoom(code);
 
-    // Reconnect by token
+    // v1: no espectadores; bloquear entradas si no estamos en lobby
+    if(room.status !== 'lobby'){
+      socket.emit('error_msg', { message: 'La partida ya ha comenzado. / Game already started.' });
+      return;
+    }
+
+    // Reconexion por token
     let attached = false;
     if(token){
       for(const p of room.players.values()){
@@ -345,9 +348,19 @@ io.on('connection', (socket)=>{
     socket.join(code);
     socket.emit('joined', { code, host: room.hostId===socket.id, token: room.players.get(socket.id).token, startingLives: room.startingLives, roomName: room.roomName });
     io.to(code).emit('room_state', { roomName: room.roomName, players: playerList(room), hostId: room.hostId, status: room.status, round: room.round, startingLives: room.startingLives, targetSeats: room.targetSeats });
+
+    // Auto-start cuando se llena DESPUÉS de Apply settings
+    if(room.status==='lobby' && room.settingsApplied && typeof room.targetSeats==='number' && room.players.size >= room.targetSeats){
+      io.to(room.code).emit('error_msg', { message: '¡Sala completa! Comienza la partida…' });
+      setTimeout(()=>{
+        room.round=5; room.firstRound=true; room.lastFirstSpeaker=null;
+        beginPreRound(room);
+        setTimeout(()=> beginBids(room), 200);
+      }, 800);
+    }
   });
 
-  // Host configures seats + lives
+  // Host configura asientos + vidas
   socket.on('configure_room', ({ roomCode, seats, lives })=>{
     const room = rooms.get(roomCode); if(!room || room.hostId!==socket.id || room.status!=='lobby') return;
     const minSeats = Math.max(2, room.players.size);
@@ -355,17 +368,22 @@ io.on('connection', (socket)=>{
     const L = Math.max(1, Math.min(99, lives|0));
     room.targetSeats = S;
     room.startingLives = L;
-    for(const p of room.players.values()) if(!p.eliminated) p.lives=L; // refresh lobby lives
+    room.settingsApplied = true;
+    for(const p of room.players.values()) if(!p.eliminated) p.lives=L;
     io.to(room.code).emit('room_state', { roomName: room.roomName, players: playerList(room), hostId: room.hostId, status: room.status, round: room.round, startingLives:L, targetSeats:S });
-    // Auto-start when full
+
+    // Auto-start si ya está lleno
     if(room.players.size >= S){
-      room.round=5; room.firstRound=true; room.lastFirstSpeaker=null;
-      beginPreRound(room);
-      setTimeout(()=> beginBids(room), 200);
+      io.to(room.code).emit('error_msg', { message: '¡Sala completa! Comienza la partida…' });
+      setTimeout(()=>{
+        room.round=5; room.firstRound=true; room.lastFirstSpeaker=null;
+        beginPreRound(room);
+        setTimeout(()=> beginBids(room), 200);
+      }, 800);
     }
   });
 
-  // Manual start (host)
+  // Manual start
   socket.on('start_game', ({ roomCode })=>{
     const room = rooms.get(roomCode); if(!room || room.hostId!==socket.id) return;
     room.round=5; room.firstRound=true; room.lastFirstSpeaker=null;
@@ -376,14 +394,13 @@ io.on('connection', (socket)=>{
   socket.on('submit_bid', ({ roomCode, value })=>{
     const room = rooms.get(roomCode); if(!room || room.status!=='bids' || room.round===1) return;
     const ord = room.bidding.order; const idx = room.bidding.idx; const pid = ord[idx];
-    if(pid!==socket.id) return; // not your turn
+    if(pid!==socket.id) return;
     let v = Math.max(0, Math.min(room.round, value|0));
     const last = idx===ord.length-1;
     if(last && room.bidding.sum + v === room.round){ io.to(socket.id).emit('error_msg',{message:"You're a fool! Pick a different number."}); return; }
     const p = room.players.get(pid); p.bid = v; room.bidding.sum += v;
     room.bidding.idx++;
     if(room.bidding.idx < ord.length){ promptBid(room); } else { beginPlay(room); }
-    // broadcast an updated bids_state so everyone sees numbers
     io.to(room.code).emit('bids_state', {
       roomName: room.roomName,
       round: room.round,
@@ -401,7 +418,6 @@ io.on('connection', (socket)=>{
     const p = room.players.get(socket.id);
     if(answer!=='YES' && answer!=='NO') return;
     p.r1Guess = answer;
-    // when all have answered, resolve in resolveRound1 via beginRound1YesNo/maybe
     const alive = aliveIds(room);
     const allGuessed = alive.every(id=>{
       const g = room.players.get(id).r1Guess; return g==='YES' || g==='NO';
@@ -411,7 +427,7 @@ io.on('connection', (socket)=>{
 
   socket.on('play_card', ({ roomCode, card })=>{
     const room = rooms.get(roomCode); if(!room || room.status!=='play') return;
-    if(room.play.turn!==socket.id) return; // not your turn
+    if(room.play.turn!==socket.id) return;
     const p = room.players.get(socket.id);
     const idx = p.hand.indexOf(card); if(idx===-1){ io.to(socket.id).emit('error_msg',{message:"You don't have that card."}); return; }
     p.hand.splice(idx,1);
@@ -436,7 +452,7 @@ io.on('connection', (socket)=>{
   });
 
   socket.on('disconnect', ()=>{
-    // Keep seats for simple reconnection by token
+    // mantener token para reconexión sencilla
   });
 });
 
