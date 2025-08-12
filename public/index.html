@@ -8,30 +8,8 @@
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-  <!-- Global overview bar -->
-  <header id="overview" class="overview">
-    <div class="left">
-      <span id="roomName" class="roomname"></span>
-      <span id="roomCodeGlobal" class="pill code">—</span>
-      <button id="copyCode" class="mini">Copy</button>
-    </div>
-    <div class="center">
-      <span id="ovRound" class="pill">Round —</span>
-      <span id="ovHand" class="pill">Hand —/—</span>
-      <span id="ovStarter" class="pill">Starter —</span>
-      <span id="ovTurn" class="pill">Turn —</span>
-    </div>
-    <div class="right">
-      <button id="btnRoundHelp" class="mini">?</button>
-      <select id="langSelect">
-        <option value="en">EN</option>
-        <option value="es">ES</option>
-      </select>
-      <button id="btnIntro" class="mini">Instructions</button>
-    </div>
-  </header>
-
   <div class="wrap">
+    <!-- Bienvenida / Join -->
     <section id="view-join" class="panel">
       <h1 data-i18n="welcome_title">Welcome</h1>
       <div class="grid3">
@@ -48,18 +26,23 @@
           <input id="roomCode" maxlength="8" placeholder="e.g. ZETA42" />
         </div>
       </div>
-      <div class="row">
+      <div class="row" style="margin-top:8px">
         <button id="btnCreate" data-i18n="create_room">Create room</button>
         <button id="btnJoin" class="secondary" data-i18n="join_room">Join room</button>
+        <select id="langSelect" style="max-width:120px">
+          <option value="en">EN</option>
+          <option value="es">ES</option>
+        </select>
         <button id="btnOpenIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
       </div>
       <p class="muted" data-i18n="join_hint">Create a new room (we'll generate the code), or join an existing one with its code.</p>
     </section>
 
+    <!-- Lobby -->
     <section id="view-lobby" class="panel hidden">
       <h1><span data-i18n="lobby">Lobby</span> <span id="roomCodeBadge" class="pill"></span></h1>
       <div id="playersLobby" class="row"></div>
-      <div id="hostControls" class="hidden">
+      <div id="hostControls" class="">
         <div class="grid2">
           <div>
             <label data-i18n="num_players">Number of players (2–10)</label>
@@ -73,23 +56,27 @@
         <div class="row" style="margin-top:8px">
           <button id="btnConfigure" class="" data-i18n="apply_settings">Apply settings</button>
           <button id="btnStart" class="secondary" data-i18n="start_now">Start now (manual)</button>
+          <button id="btnLobbyIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
         </div>
         <p class="muted" id="fillHint"></p>
       </div>
       <p class="muted" data-i18n="share_hint">Share this page + room code with your friends.</p>
     </section>
 
+    <!-- Pre-round -->
     <section id="view-preround" class="panel hidden">
       <h1 id="hdrRound">Round</h1>
       <div class="row" id="orderBadges"></div>
       <div class="muted" id="firstSpeakerNote"></div>
     </section>
 
+    <!-- Bids / Round 1 prompt -->
     <section id="view-bids" class="panel hidden">
       <h1 id="hdrBids">Bidding</h1>
       <div id="bidsArea"></div>
     </section>
 
+    <!-- Play -->
     <section id="view-play" class="panel hidden">
       <div class="row">
         <h1 data-i18n="play">Play</h1>
@@ -106,12 +93,31 @@
       <div id="handLog" class="handlog"></div>
     </section>
 
+    <!-- Round summary -->
     <section id="view-summary" class="panel hidden">
       <h1 data-i18n="round_summary">Round summary</h1>
       <div id="roundBox"></div>
       <div class="row"><button id="btnNextRound" class="" data-i18n="next_round">Next round</button></div>
     </section>
   </div>
+
+  <!-- Footer overview (visible en juego; oculto en bienvenida/lobby) -->
+  <footer id="overview" class="overview hidden">
+    <div class="left">
+      <span id="roomName" class="roomname"></span>
+      <span id="roomCodeGlobal" class="pill code">—</span>
+      <button id="copyCode" class="mini">Copy</button>
+    </div>
+    <div class="center">
+      <span id="ovRound" class="pill">Round —</span>
+      <span id="ovHand" class="pill">Hand —/—</span>
+      <span id="ovStarter" class="pill">Starter —</span>
+      <span id="ovTurn" class="pill">Turn —</span>
+    </div>
+    <div class="right">
+      <button id="btnRoundHelp" class="mini">?</button>
+    </div>
+  </footer>
 
   <!-- Intro / Instructions Modal -->
   <div id="introModal" class="modal hidden">
