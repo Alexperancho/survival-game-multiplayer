@@ -2,6 +2,14 @@ const $ = sel => document.querySelector(sel);
 const show = (id, yes=true)=> document.getElementById(id).classList[yes?'remove':'add']('hidden');
 const toast = (msg)=>{ const t=document.getElementById('toast'); t.textContent=msg; show('toast',true); setTimeout(()=>show('toast',false), 1800); };
 
+// Aviso centrado 800 ms (para autostart)
+function centerNotice(msg, dur=800){
+  const el = document.getElementById('centerNotice');
+  el.innerHTML = `<div>${msg}</div>`;
+  el.classList.remove('hidden');
+  setTimeout(()=> el.classList.add('hidden'), dur);
+}
+
 let socket; let ROOM=''; let ME={ id:null, name:null, token:null, host:false };
 let MY_HAND=[];
 let CURRENT_ROUND = null;
@@ -291,6 +299,36 @@ function renderOverview({ round, trickN, starter, turn, players, roomName, code 
   }
 }
 
+// Sorteo / ruleta del primer hablante
+function openRaffle(){ document.getElementById('raffleModal').classList.remove('hidden'); }
+function closeRaffle(){ document.getElementById('raffleModal').classList.add('hidden'); }
+function playRaffle(order, chosenId){
+  const body = document.getElementById('raffleBody');
+  body.innerHTML = '';
+  const nameBox = document.createElement('div'); nameBox.className='raffle-name'; body.appendChild(nameBox);
+  const pointer = document.createElement('div'); pointer.className='raffle-pointer'; pointer.textContent = LANG==='es'?'Sorteando…':'Drawing…';
+  body.appendChild(pointer);
+
+  openRaffle();
+  let idx = 0;
+  const names = order.map(o=>o.name);
+  const finalName = (order.find(o=>o.id===chosenId)||{}).name || '—';
+
+  const tickMs = 90;
+  const totalMs = 1500;
+  const timer = setInterval(()=>{
+    nameBox.textContent = names[idx % names.length];
+    idx++;
+  }, tickMs);
+
+  setTimeout(()=>{
+    clearInterval(timer);
+    nameBox.textContent = finalName;
+    pointer.textContent = (LANG==='es'?'Empieza: ':'Starts: ') + finalName;
+    setTimeout(closeRaffle, 300);
+  }, totalMs);
+}
+
 // Socket bindings
 function bindSocket(){
   socket.on('room_created', ({ code, host, token, startingLives, roomName })=>{
@@ -342,7 +380,12 @@ function bindSocket(){
   };
   document.getElementById('btnStart').onclick = ()=> socket.emit('start_game', { roomCode: ROOM });
 
-  socket.on('preround_state', ({ roomName, round, firstSpeaker, order, players })=>{
+  // Notificación de autostart (burbuja centrada 800ms)
+  socket.on('autostart', ()=>{
+    centerNotice(LANG==='es' ? '¡Sala completa! Comienza la partida…' : 'Room full! Starting the game…', 800);
+  });
+
+  socket.on('preround_state', ({ roomName, round, firstSpeaker, order, players, raffle })=>{
     CURRENT_ROUND = round;
     ORDER_CACHE = order || [];
     PLAYERS_CACHE = players || [];
@@ -353,6 +396,11 @@ function bindSocket(){
     order.forEach((o,i)=>{ const d=document.createElement('div'); d.className='pill'; d.textContent=(i===0?'▶ ':'')+o.name; badges.appendChild(d); });
     const fs = order.find(o=>o.id===firstSpeaker); document.getElementById('firstSpeakerNote').textContent = `${(LANG==='es'?'Primer hablante':'First speaker')}: ${fs? fs.name : '—'}`;
     renderOverview({ round, trickN: 1, starter: firstSpeaker, turn: firstSpeaker, players, roomName, code: $('#roomCodeGlobal').textContent });
+
+    // Lanzar sorteo si corresponde (solo la primera vez, segun el servidor)
+    if (typeof raffle !== 'undefined' && raffle) {
+      setTimeout(()=> playRaffle(order, firstSpeaker), 200);
+    }
   });
 
   // Private hand after dealing
@@ -406,7 +454,6 @@ function bindSocket(){
     show('view-preround', false); show('view-play', false); show('view-bids', true);
     show('overview', true);
     document.getElementById('hdrBids').textContent = `${(LANG==='es'?'Ronda':'Round')} 1 — ${(LANG==='es'?'Instrucciones':'Instructions')}`;
-    // FIX: usar comillas dobles para el apóstrofo en inglés (sin \\')
     const area = document.getElementById('bidsArea'); 
     area.innerHTML = `<p class="muted">${(LANG==='es'
       ? 'Mira las cartas de los demás y responde Sí/No.'
