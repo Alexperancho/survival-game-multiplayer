@@ -4,14 +4,27 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Survival Game — Online</title>
-  <link rel="stylesheet" href="/styles.css">
-  <script src="/socket.io/socket.io.js"></script>
-<link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#000000">
 
-<!-- Iconos -->
-<link rel="icon" href="/icons/favicon.ico" sizes="any">
-<link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <!-- Estilos -->
+  <link rel="stylesheet" href="/styles.css">
+
+  <!-- Cliente Socket.IO desde CDN (GitHub Pages no sirve /socket.io/socket.io.js) -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#000000">
+  <link rel="icon" href="/icons/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+  <!-- Registro del Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js').catch(console.error);
+      });
+    }
+  </script>
 </head>
 <body>
   <div class="wrap">
@@ -107,7 +120,7 @@
     </section>
   </div>
 
-  <!-- Footer overview (visible en juego; oculto en bienvenida/lobby) -->
+  <!-- Footer overview -->
   <footer id="overview" class="overview hidden">
     <div class="left">
       <span id="roomName" class="roomname"></span>
@@ -152,6 +165,8 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
+
+  <!-- Lógica del juego -->
   <script src="/client.js"></script>
 </body>
 </html>
