@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "fun.survivalgame.app",
+    "sha256_cert_fingerprints": [
+      "CF:63:00:F3:9C:55:87:C3:E0:4A:D2:E5:F6:26:D4:B3:A4:72:0E:FB:4F:CB:68:4F:4F:52:F6:14:98:9B:08:63"
+    ]
+  }
+}]
