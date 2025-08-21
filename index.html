@@ -5,26 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Survival Game — Online</title>
 
-  <!-- Estilos -->
   <link rel="stylesheet" href="/styles.css">
-
-  <!-- Cliente Socket.IO desde CDN (GitHub Pages no sirve /socket.io/socket.io.js) -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
-
-  <!-- PWA -->
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#000000">
+
+  <!-- Iconos -->
   <link rel="icon" href="/icons/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
 
-  <!-- Registro del Service Worker -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js').catch(console.error);
-      });
-    }
-  </script>
+  <!-- Socket.IO client desde CDN (en GitHub Pages /socket.io/socket.io.js da 404) -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+
+  <!-- Config con la URL del backend + override para forzar io() a TARGET -->
+  <script src="/config.js"></script>
+  <script src="/socket-override.js"></script>
 </head>
 <body>
   <div class="wrap">
@@ -111,13 +105,6 @@
       <h3 data-i18n="hand_log">Hand log</h3>
       <div id="handLog" class="handlog"></div>
     </section>
-
-    <!-- Round summary -->
-    <section id="view-summary" class="panel hidden">
-      <h1 data-i18n="round_summary">Round summary</h1>
-      <div id="roundBox"></div>
-      <div class="row"><button id="btnNextRound" class="" data-i18n="next_round">Next round</button></div>
-    </section>
   </div>
 
   <!-- Footer overview -->
@@ -138,7 +125,7 @@
     </div>
   </footer>
 
-  <!-- Intro / Instructions Modal -->
+  <!-- Modales e infraestructura -->
   <div id="introModal" class="modal hidden">
     <div class="modal-content">
       <button class="close" id="closeIntro">×</button>
@@ -146,7 +133,6 @@
     </div>
   </div>
 
-  <!-- Round Help Modal -->
   <div id="roundModal" class="modal hidden">
     <div class="modal-content">
       <button class="close" id="closeRound">×</button>
@@ -154,10 +140,8 @@
     </div>
   </div>
 
-  <!-- Aviso centrado 800ms -->
   <div id="centerNotice" class="center-notice hidden"></div>
 
-  <!-- Sorteo / ruleta del primer hablante -->
   <div id="raffleModal" class="modal hidden">
     <div class="modal-content small">
       <div id="raffleBody" class="raffle-body"></div>
@@ -166,7 +150,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <!-- Lógica del juego -->
+  <!-- Tu lógica principal (no toca) -->
   <script src="/client.js"></script>
 </body>
 </html>
