@@ -2,25 +2,33 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="x-ua-compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Survival Game — Online</title>
 
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#000000">
+  <!-- Evita servir versiones cacheadas mientras arreglamos conexión -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#000000" />
 
   <!-- Iconos -->
-  <link rel="icon" href="/icons/favicon.ico" sizes="any">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="icon" href="/icons/favicon.ico" sizes="any" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 
-  <!-- Cliente Socket.IO v4 desde CDN (no uses /socket.io/socket.io.js en GitHub Pages) -->
+  <!-- Cliente Socket.IO v4 desde CDN (NO usar /socket.io/socket.io.js en GitHub Pages) -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
 
-  <!-- Config y override (deben ir antes de client.js) -->
+  <!-- Config del backend + parche para forzar io() al servidor en Railway -->
   <script src="/config.js"></script>
   <script src="/socket-override.js"></script>
 </head>
 <body>
+  <noscript>This game requires JavaScript enabled.</noscript>
+
   <div class="wrap">
     <!-- Bienvenida / Join -->
     <section id="view-join" class="panel">
@@ -48,12 +56,17 @@
         </select>
         <button id="btnOpenIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
       </div>
-      <p class="muted" data-i18n="join_hint">Create a new room (we'll generate the code), or join an existing one with its code.</p>
+      <p class="muted" data-i18n="join_hint">
+        Create a new room (we'll generate the code), or join an existing one with its code.
+      </p>
     </section>
 
     <!-- Lobby -->
     <section id="view-lobby" class="panel hidden">
-      <h1><span data-i18n="lobby">Lobby</span> <span id="roomCodeBadge" class="pill"></span></h1>
+      <h1>
+        <span data-i18n="lobby">Lobby</span>
+        <span id="roomCodeBadge" class="pill"></span>
+      </h1>
       <div id="playersLobby" class="row"></div>
       <div id="hostControls" class="">
         <div class="grid2">
@@ -67,13 +80,15 @@
           </div>
         </div>
         <div class="row" style="margin-top:8px">
-          <button id="btnConfigure" class="" data-i18n="apply_settings">Apply settings</button>
+          <button id="btnConfigure" data-i18n="apply_settings">Apply settings</button>
           <button id="btnStart" class="secondary" data-i18n="start_now">Start now (manual)</button>
           <button id="btnLobbyIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
         </div>
         <p class="muted" id="fillHint"></p>
       </div>
-      <p class="muted" data-i18n="share_hint">Share this page + room code with your friends.</p>
+      <p class="muted" data-i18n="share_hint">
+        Share this page + room code with your friends.
+      </p>
     </section>
 
     <!-- Pre-round -->
@@ -98,10 +113,25 @@
       <h3 data-i18n="your_hand">Your hand</h3>
       <div class="cards" id="myHand"></div>
       <div id="playHint" class="muted" style="margin-top:6px"></div>
+
       <div class="divider"></div>
+
       <h3 data-i18n="summary">Summary</h3>
-      <table class="summary"><thead><tr><th data-i18n="player">Player</th><th data-i18n="wins">Wins</th><th data-i18n="ask_delta">Ask Δ</th><th data-i18n="lives">Lives</th><th data-i18n="bid">Bid</th></tr></thead><tbody id="sumBody"></tbody></table>
+      <table class="summary">
+        <thead>
+          <tr>
+            <th data-i18n="player">Player</th>
+            <th data-i18n="wins">Wins</th>
+            <th data-i18n="ask_delta">Ask Δ</th>
+            <th data-i18n="lives">Lives</th>
+            <th data-i18n="bid">Bid</th>
+          </tr>
+        </thead>
+        <tbody id="sumBody"></tbody>
+      </table>
+
       <div class="divider"></div>
+
       <h3 data-i18n="hand_log">Hand log</h3>
       <div id="handLog" class="handlog"></div>
     </section>
@@ -125,6 +155,7 @@
     </div>
   </footer>
 
+  <!-- Modales -->
   <div id="introModal" class="modal hidden">
     <div class="modal-content">
       <button class="close" id="closeIntro">×</button>
@@ -139,6 +170,7 @@
     </div>
   </div>
 
+  <!-- Avisos -->
   <div id="centerNotice" class="center-notice hidden"></div>
   <div id="raffleModal" class="modal hidden">
     <div class="modal-content small">
@@ -148,7 +180,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <!-- Tu JS principal -->
+  <!-- Tu JS principal (debe ir al final para que exista el DOM) -->
   <script src="/client.js"></script>
 </body>
 </html>
