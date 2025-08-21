@@ -21,3 +21,13 @@ pnpm-debug.log*
 # Salidas de build / cobertura (si las generas)
 dist/
 coverage/
+# SO / editores
+.DS_Store
+.vscode/
+.idea/
+
+# Si alguna vez usas herramientas de build locales
+node_modules/
+dist/
+build/
+*.log
