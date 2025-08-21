@@ -1,29 +1,30 @@
-// socket-override.js
-// Si está definida window.SG_SERVER, forzamos que io() conecte a ese origen
+// socket-override.js — fuerza que todas las llamadas a io() vayan al backend y en websocket
 (function () {
   var TARGET = (typeof window !== "undefined" && window.SG_SERVER) ? window.SG_SERVER : "";
-  if (!TARGET) return; // sin config => comportamiento por defecto
+  if (!TARGET) return;
 
-  var ready = function () {
-    if (!window.io) return; // aún no cargó el script de socket.io
+  function patch() {
+    if (!window.io || window.__SG_IO_PATCHED__) return;
     var orig = window.io;
+
+    // Parchea io() para que use siempre TARGET, aunque le pasen otra URL
     window.io = function (url, opts) {
-      // Permite llamadas io(), io(opts) o io(url, opts)
-      if (!url || typeof url === "object") {
-        opts = url || {};
-        url = TARGET;
+      // Soporta llamadas io(), io(opts) e io(url, opts) ignorando siempre "url"
+      if (typeof url === "object" && !opts) {
+        opts = url;
       }
       opts = opts || {};
-      // Preferimos WebSocket puro (evita long-polling en hosts estáticos)
-      if (!opts.transports) opts.transports = ["websocket"];
-      return orig(url, opts);
+      if (!opts.transports) opts.transports = ["websocket"]; // importante en sitios estáticos
+      return orig(TARGET, opts);
     };
-  };
 
-  // Espera a que cargue el script de socket.io y luego parchea
+    window.__SG_IO_PATCHED__ = true;
+    console.log("[SG] Socket.IO override activo →", TARGET);
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", ready);
+    document.addEventListener("DOMContentLoaded", patch);
   } else {
-    ready();
+    patch();
   }
 })();
