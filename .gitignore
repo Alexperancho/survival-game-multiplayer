@@ -1,0 +1,23 @@
+# Dependencias
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Variables de entorno (nunca subas claves)
+.env
+.env.*
+!.env.example
+
+# SO / editores
+.DS_Store
+.vscode/
+.idea/
+
+# Salidas de build / cobertura (si las generas)
+dist/
+coverage/
