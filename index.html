@@ -13,10 +13,10 @@
   <link rel="icon" href="/icons/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
 
-  <!-- Socket.IO client desde CDN (en GitHub Pages /socket.io/socket.io.js da 404) -->
+  <!-- Cliente Socket.IO v4 desde CDN (no uses /socket.io/socket.io.js en GitHub Pages) -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
 
-  <!-- Config con la URL del backend + override para forzar io() a TARGET -->
+  <!-- Config y override (deben ir antes de client.js) -->
   <script src="/config.js"></script>
   <script src="/socket-override.js"></script>
 </head>
@@ -125,7 +125,6 @@
     </div>
   </footer>
 
-  <!-- Modales e infraestructura -->
   <div id="introModal" class="modal hidden">
     <div class="modal-content">
       <button class="close" id="closeIntro">×</button>
@@ -141,7 +140,6 @@
   </div>
 
   <div id="centerNotice" class="center-notice hidden"></div>
-
   <div id="raffleModal" class="modal hidden">
     <div class="modal-content small">
       <div id="raffleBody" class="raffle-body"></div>
@@ -150,7 +148,7 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <!-- Tu lógica principal (no toca) -->
+  <!-- Tu JS principal -->
   <script src="/client.js"></script>
 </body>
 </html>
