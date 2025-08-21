@@ -60,19 +60,16 @@ const io = new Server(server, {
 const rooms = new Map();
 
 function genRoomCode() {
-  // 5 letras mayúsculas (evita colisiones triviales)
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVXYZW23456789';
+  const alphabet = 'ABCDEFGHJKLMNPRSTUVWXYZ23456789';
   let code = '';
   for (let i = 0; i < 5; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
   return code;
 }
-
 function ensureRoomCode() {
   let code;
   do { code = genRoomCode(); } while (rooms.has(code));
   return code;
 }
-
 function roomSummary(room) {
   return {
     code: room.code,
@@ -82,12 +79,9 @@ function roomSummary(room) {
     players: Array.from(room.players.values())
   };
 }
-
 function notifyLobby(room) {
   io.to(room.code).emit('lobby-state', roomSummary(room));
 }
-
-// Helpers: acepta eventos con nombre alternativo
 function onEither(socket, names, handler) {
   names.forEach(n => socket.on(n, handler));
 }
@@ -96,7 +90,7 @@ function onEither(socket, names, handler) {
 io.on('connection', (socket) => {
   console.log('Client connected', socket.id);
 
-  // ========== Crear sala ==========
+  // Crear sala
   onEither(socket, ['create-room', 'createRoom'], (payload = {}) => {
     try {
       const playerName = (payload.playerName || payload.name || 'Player').toString().slice(0, 20);
@@ -120,8 +114,6 @@ io.on('connection', (socket) => {
       rooms.set(code, room);
 
       socket.join(code);
-
-      // Respuestas típicas
       socket.emit('room-created', { roomCode: code, ...roomSummary(room) });
       notifyLobby(room);
       console.log(`Room ${code} created by ${socket.id} (${playerName})`);
@@ -131,22 +123,17 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ========== Unirse a sala ==========
+  // Unirse a sala
   onEither(socket, ['join-room', 'joinRoom'], (payload = {}) => {
     try {
       const playerName = (payload.playerName || payload.name || 'Player').toString().slice(0, 20);
       const code = ((payload.roomCode || payload.code || '') + '').toUpperCase().trim();
 
       const room = rooms.get(code);
-      if (!room) {
-        socket.emit('error-message', { type: 'join-room', message: 'Room not found.' });
-        return;
-      }
+      if (!room) return socket.emit('error-message', { type: 'join-room', message: 'Room not found.' });
 
-      // Límite de asientos si está configurado
       if (room.settings?.seatCount && room.players.size >= room.settings.seatCount) {
-        socket.emit('error-message', { type: 'join-room', message: 'Room is full.' });
-        return;
+        return socket.emit('error-message', { type: 'join-room', message: 'Room is full.' });
       }
 
       room.players.set(socket.id, { id: socket.id, name: playerName });
@@ -163,19 +150,16 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ========== Configurar sala (host) ==========
+  // Configurar sala (solo host)
   onEither(socket, ['configure', 'apply-settings', 'applySettings'], (payload = {}) => {
     try {
-      const code = Array.from(socket.rooms).find(r => rooms.has(r)); // la sala a la que pertenece
+      const code = Array.from(socket.rooms).find(r => rooms.has(r));
       if (!code) return;
-
       const room = rooms.get(code);
       if (!room) return;
       if (room.hostId !== socket.id) {
-        socket.emit('error-message', { type: 'configure', message: 'Only host can configure.' });
-        return;
+        return socket.emit('error-message', { type: 'configure', message: 'Only host can configure.' });
       }
-
       const newSettings = {};
       if (payload.seatCount) newSettings.seatCount = Math.max(2, Math.min(10, Number(payload.seatCount)));
       if (payload.startingLives) newSettings.startingLives = Math.max(1, Math.min(99, Number(payload.startingLives)));
@@ -190,19 +174,16 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ========== Iniciar partida (host) ==========
+  // Empezar partida (solo host)
   onEither(socket, ['start', 'start-now', 'start_now', 'startGame'], () => {
     try {
       const code = Array.from(socket.rooms).find(r => rooms.has(r));
       if (!code) return;
-
       const room = rooms.get(code);
       if (!room) return;
       if (room.hostId !== socket.id) {
-        socket.emit('error-message', { type: 'start', message: 'Only host can start.' });
-        return;
+        return socket.emit('error-message', { type: 'start', message: 'Only host can start.' });
       }
-
       io.to(code).emit('game-started', { roomCode: code, startedAt: Date.now() });
       console.log(`Room ${code} started by host ${socket.id}`);
     } catch (err) {
@@ -211,9 +192,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ========== Reenvío genérico de eventos de juego ==========
-  // Si tu client emite otros eventos (p.ej. 'play-card'), podemos reenviarlos a la sala.
-  // Añade aquí los que necesites (ejemplos):
+  // Reenvíos genéricos de eventos de juego (ejemplo)
   onEither(socket, ['play-card', 'playCard'], (data) => {
     const code = Array.from(socket.rooms).find(r => rooms.has(r));
     if (!code) return;
@@ -226,27 +205,19 @@ io.on('connection', (socket) => {
     io.to(code).emit('round-next', { ts: Date.now() });
   });
 
-  // ========== Salida ==========
+  // Desconexión
   socket.on('disconnect', (reason) => {
-    // El socket puede estar en 0 o 1 sala (nuestro modelo)
     let room;
     for (const r of rooms.values()) {
-      if (r.players.has(socket.id)) {
-        room = r;
-        break;
-      }
+      if (r.players.has(socket.id)) { room = r; break; }
     }
     if (room) {
       room.players.delete(socket.id);
       io.to(room.code).emit('player-left', { id: socket.id });
-
-      // Si el host se va, asigna nuevo host si hay alguno
       if (room.hostId === socket.id) {
         const [next] = room.players.keys();
         room.hostId = next || null;
       }
-
-      // Si la sala queda vacía, elimínala
       if (room.players.size === 0) {
         rooms.delete(room.code);
         console.log(`Room ${room.code} deleted (empty)`);
