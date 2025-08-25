@@ -1,68 +1,77 @@
-/* Survival Game - Service Worker (PWA) */
-const CACHE_NAME = 'sg-cache-v1';
-const OFFLINE_URL = '/offline.html';
-
-/* Archivos básicos a precachear. Añade aquí otros estáticos si los tienes. */
+// service-worker.js — Survival Game (versión ligera, sin cachear websockets)
+const VERSION = 'sg-sw-v3'; // sube este número si cambias el SW
 const PRECACHE = [
-  '/',
+  '/',                     // index
   '/index.html',
   '/styles.css',
   '/client.js',
+  '/config.js',
+  '/socket-override.js',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
-  OFFLINE_URL
+  '/offline.html'
 ];
 
-/* Instalación: precache básico */
+// RUTA: nunca interceptes websockets ni la librería de socket.io (se sirven mejor fuera del SW)
+const isSocketRelated = (url) =>
+  url.includes('/socket.io/') ||
+  url.startsWith('ws:') || url.startsWith('wss:') ||
+  url.includes('cdn.socket.io');
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE))
+    caches.open(VERSION).then((cache) => cache.addAll(PRECACHE)).then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
-/* Activación: limpieza de caches viejos */
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(k => (k !== CACHE_NAME ? caches.delete(k) : Promise.resolve())))
-    )
+    caches.keys().then((keys) =>
+      Promise.all(keys.map((k) => (k === VERSION ? Promise.resolve() : caches.delete(k))))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-/* Fetch:
-   - Navegación (documentos HTML): red y, si falla, offline.html
-   - Otros GET: cache-first y, si no está, red
-   - Nota: los WebSockets (wss://) no pasan por el SW  */
+// Estrategia "network-first con fallback a cache" para HTML/JS/CSS.
+// No cacheamos socket.io ni websockets.
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+  const url = new URL(req.url);
 
-  // Solo manejamos GET
-  if (req.method !== 'GET') return;
+  if (req.method !== 'GET' || isSocketRelated(url.href)) {
+    // Deja pasar peticiones no-GET y todo lo de socket.io/websocket.
+    return;
+  }
 
-  // Navegación (páginas)
-  if (req.mode === 'navigate' || (req.destination === 'document')) {
+  // Para navegaciones (documentos), intenta red → fallback cache → offline
+  if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req).catch(() => caches.match(OFFLINE_URL))
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
+          return res;
+        })
+        .catch(async () => {
+          const cache = await caches.open(VERSION);
+          return (await cache.match(req)) || (await cache.match('/offline.html'));
+        })
     );
     return;
   }
 
-  // Recursos estáticos
+  // Para assets estáticos: network-first → cache
   event.respondWith(
-    caches.match(req).then((cached) => {
-      if (cached) return cached;
-      return fetch(req).then((resp) => {
-        // Guarda en caché copias de respuestas válidas
-        const copy = resp.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-        return resp;
-      }).catch(() => {
-        // Sin red y sin caché → nada que hacer (dejamos fallar)
-        return caches.match(OFFLINE_URL);
-      });
-    })
+    fetch(req)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
+        return res;
+      })
+      .catch(async () => {
+        const cache = await caches.open(VERSION);
+        return (await cache.match(req)) || Response.error();
+      })
   );
 });
