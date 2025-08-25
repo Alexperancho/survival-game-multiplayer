@@ -1,55 +1,66 @@
-// socket-override.js
-// Fuerza que TODAS las conexiones Socket.IO del front vayan al backend (SG_SERVER)
-// y que usen transporte "websocket" (evita long-polling en host estático como GitHub Pages).
-
-(function () {
-  const TARGET =
-    (typeof window !== "undefined" && window.SG_SERVER) ? window.SG_SERVER : "";
-
-  function patch() {
-    if (!TARGET) {
-      console.warn("[SG] SG_SERVER no definido en config.js; no se aplica override.");
-      return;
-    }
-    if (!window.io || window.__SG_IO_PATCHED__) return;
-
-    const originalIo = window.io;
-
-    // Sobrescribe io() para ignorar cualquier URL y usar siempre TARGET
-    window.io = function (url, opts) {
-      // Soporta io(), io(opts) e io(url, opts) — siempre usaremos TARGET
-      if (typeof url === "object" && !opts) {
-        opts = url;
-      }
-      opts = opts || {};
-
-      // Fuerza WebSocket para evitar problemas de CORS con long-polling en sitios estáticos
-      if (!opts.transports) opts.transports = ["websocket"];
-
-      // Si quieres enviar cookies/autorización entre orígenes, descomenta:
-      // opts.withCredentials = true;
-
-      return originalIo(TARGET, opts);
-    };
-
-    window.__SG_IO_PATCHED__ = true;
-    console.log("[SG] Socket.IO override activo →", TARGET);
+/* socket-override.js
+   Fuerza a que todas las llamadas a io() vayan a nuestro backend de Railway
+   con opciones seguras para GitHub Pages.
+*/
+(() => {
+  // 1) Comprobaciones básicas
+  if (typeof window === 'undefined') return;
+  if (!window.io) {
+    console.error('[SG] ERROR: socket.io no está cargado. Asegúrate de incluir el CDN antes de este archivo.');
+    return;
   }
 
-  // Intenta aplicar el parche cuando el DOM esté listo
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", patch);
+  const ORIG_IO = window.io;
+  const BACKEND = (window.SG_BACKEND || '').replace(/\/$/, '');
+  if (!/^https?:\/\//.test(BACKEND)) {
+    console.error('[SG] ERROR: SG_BACKEND no está definido o es inválido:', BACKEND);
   } else {
-    patch();
+    console.log('[SG] Socket.IO override activo →', BACKEND);
   }
 
-  // Reintentos por si el CDN de socket.io entra más tarde
-  let tries = 0;
-  const timer = setInterval(() => {
-    if (window.__SG_IO_PATCHED__ || tries++ > 20) {
-      clearInterval(timer);
-      return;
-    }
-    patch();
-  }, 250);
+  // 2) Utilidad para mezclar opciones
+  const merge = (a, b) => Object.assign({}, a || {}, b || {});
+
+  // 3) Sobrescribe io() para redirigir SIEMPRE al backend
+  window.io = function overriddenIo(_unusedUrl, opts) {
+    const baseOpts = {
+      path: '/socket.io',
+      transports: ['websocket'],      // Sólo WebSocket (mejor en Pages)
+      upgrade: false,                 // Evita intento de polling→ws
+      withCredentials: false,
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 800,
+      timeout: 10000,                 // 10s
+      forceNew: true,                 // evita reutilizar conexiones rotas
+      extraHeaders: {}                // no mandamos cookies
+    };
+    const finalOpts = merge(baseOpts, opts);
+    console.log('[SG] io() redirigido →', BACKEND, finalOpts);
+    const socket = ORIG_IO(BACKEND, finalOpts);
+    return socket;
+  };
+
+  // Compatibilidad por si client.js usa io.connect
+  window.io.connect = window.io;
+
+  // 4) Conexión “probe” para visibilidad en consola
+  try {
+    const probe = ORIG_IO(BACKEND, {
+      path: '/socket.io',
+      transports: ['websocket'],
+      upgrade: false,
+      forceNew: true,
+      timeout: 8000
+    });
+    probe.once('connect', () => {
+      console.log('[SG] Probe: conectado con éxito');
+      probe.close();
+    });
+    probe.once('connect_error', (err) => {
+      console.error('[SG] Probe: connect_error →', err && (err.message || err));
+    });
+  } catch (e) {
+    console.error('[SG] Probe: excepción al conectar →', e);
+  }
 })();
