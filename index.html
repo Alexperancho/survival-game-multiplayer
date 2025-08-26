@@ -2,10 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Survival Game — Online</title>
-
-  <link rel="stylesheet" href="/styles.css">
 
   <!-- PWA -->
   <link rel="manifest" href="/manifest.webmanifest">
@@ -14,6 +12,9 @@
   <!-- Iconos -->
   <link rel="icon" href="/icons/favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+  <!-- Estilos -->
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <div class="wrap">
@@ -78,7 +79,7 @@
       <div class="muted" id="firstSpeakerNote"></div>
     </section>
 
-    <!-- Bids / Round 1 prompt -->
+    <!-- Bids -->
     <section id="view-bids" class="panel hidden">
       <h1 id="hdrBids">Bidding</h1>
       <div id="bidsArea"></div>
@@ -95,7 +96,18 @@
       <div id="playHint" class="muted" style="margin-top:6px"></div>
       <div class="divider"></div>
       <h3 data-i18n="summary">Summary</h3>
-      <table class="summary"><thead><tr><th data-i18n="player">Player</th><th data-i18n="wins">Wins</th><th data-i18n="ask_delta">Ask Δ</th><th data-i18n="lives">Lives</th><th data-i18n="bid">Bid</th></tr></thead><tbody id="sumBody"></tbody></table>
+      <table class="summary">
+        <thead>
+          <tr>
+            <th data-i18n="player">Player</th>
+            <th data-i18n="wins">Wins</th>
+            <th data-i18n="ask_delta">Ask Δ</th>
+            <th data-i18n="lives">Lives</th>
+            <th data-i18n="bid">Bid</th>
+          </tr>
+        </thead>
+        <tbody id="sumBody"></tbody>
+      </table>
       <div class="divider"></div>
       <h3 data-i18n="hand_log">Hand log</h3>
       <div id="handLog" class="handlog"></div>
@@ -109,7 +121,7 @@
     </section>
   </div>
 
-  <!-- Footer -->
+  <!-- Footer overview -->
   <footer id="overview" class="overview hidden">
     <div class="left">
       <span id="roomName" class="roomname"></span>
@@ -142,29 +154,18 @@
     </div>
   </div>
 
+  <!-- Avisos -->
+  <div id="centerNotice" class="center-notice hidden"></div>
   <div id="raffleModal" class="modal hidden">
     <div class="modal-content small">
       <div id="raffleBody" class="raffle-body"></div>
     </div>
   </div>
-
-  <div id="centerNotice" class="center-notice hidden"></div>
   <div id="toast" class="toast hidden"></div>
 
-  <!-- === SCRIPTS (orden IMPORTANTE) === -->
-  <!-- 1) Config con la URL del backend -->
-  <script>
-    // Si ya tienes /config.js, puedes quitar este bloque y usar tu archivo.
-    window.SG_BACKEND = 'https://survival-game-multiplayer-production.up.railway.app';
-  </script>
-
-  <!-- 2) Socket.IO desde CDN (SIN integrity para evitar bloqueos SRI) -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
-
-  <!-- 3) Override que fuerza la conexión al backend -->
-  <script src="/socket-override.js"></script>
-
-  <!-- 4) Tu lógica del cliente -->
-  <script src="/client.js"></script>
+  <!-- Scripts: SIN CDN de Socket.IO -->
+  <script defer src="/config.js"></script>
+  <script defer src="/socket-override.js"></script>
+  <script defer src="/client.js"></script>
 </body>
 </html>
