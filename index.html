@@ -163,9 +163,14 @@
   </div>
   <div id="toast" class="toast hidden"></div>
 
-  <!-- Scripts: SIN CDN de Socket.IO -->
+  <!-- 1) Carga la librería de Socket.IO DESDE TU BACKEND (no CDN) -->
+  <script src="https://survival-game-multiplayer-production.up.railway.app/socket.io/socket.io.js"></script>
+
+  <!-- 2) Config y override -->
   <script defer src="/config.js"></script>
   <script defer src="/socket-override.js"></script>
+
+  <!-- 3) App -->
   <script defer src="/client.js"></script>
 </body>
 </html>
