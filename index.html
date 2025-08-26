@@ -1,50 +1,49 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Survival Game — Online</title>
+
+  <link rel="stylesheet" href="/styles.css">
 
   <!-- PWA -->
   <link rel="manifest" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#000000" />
-  <link rel="icon" href="/icons/icon-192.png" sizes="192x192" />
-  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <meta name="theme-color" content="#000000">
 
-  <!-- Estilos -->
-  <link rel="stylesheet" href="/styles.css" />
+  <!-- Iconos -->
+  <link rel="icon" href="/icons/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
 </head>
 <body>
   <div class="wrap">
     <!-- Bienvenida / Join -->
     <section id="view-join" class="panel">
-      <h1 data-i18n="welcome_title">Bienvenido</h1>
+      <h1 data-i18n="welcome_title">Welcome</h1>
       <div class="grid3">
         <div>
-          <label data-i18n="your_name">Tu nombre</label>
-          <input id="playerName" maxlength="20" placeholder="Alicia" />
+          <label data-i18n="your_name">Your name</label>
+          <input id="playerName" maxlength="20" placeholder="Alice" />
         </div>
         <div>
-          <label data-i18n="room_name_opt">Nombre de la sala (opcional)</label>
-          <input id="roomNameInput" maxlength="40" placeholder="Viernes por la noche" />
+          <label data-i18n="room_name_opt">Room name (optional)</label>
+          <input id="roomNameInput" maxlength="40" placeholder="Friday Night" />
         </div>
         <div>
-          <label data-i18n="room_code_join">Código de sala (para unirse)</label>
-          <input id="roomCode" maxlength="8" placeholder="p.ej. ZETA42" />
+          <label data-i18n="room_code_join">Room code (to join)</label>
+          <input id="roomCode" maxlength="8" placeholder="e.g. ZETA42" />
         </div>
       </div>
       <div class="row" style="margin-top:8px">
-        <button id="btnCreate" data-i18n="create_room">Crear sala</button>
-        <button id="btnJoin" class="secondary" data-i18n="join_room">Unirse a sala</button>
+        <button id="btnCreate" data-i18n="create_room">Create room</button>
+        <button id="btnJoin" class="secondary" data-i18n="join_room">Join room</button>
         <select id="langSelect" style="max-width:120px">
           <option value="en">EN</option>
-          <option value="es" selected>ES</option>
+          <option value="es">ES</option>
         </select>
-        <button id="btnOpenIntro" class="secondary mini" data-i18n="intro_button">Instrucciones</button>
+        <button id="btnOpenIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
       </div>
-      <p class="muted" data-i18n="join_hint">
-        Crea una sala nueva (generamos el código) o únete con un código existente.
-      </p>
+      <p class="muted" data-i18n="join_hint">Create a new room (we'll generate the code), or join an existing one with its code.</p>
     </section>
 
     <!-- Lobby -->
@@ -54,74 +53,63 @@
       <div id="hostControls" class="">
         <div class="grid2">
           <div>
-            <label data-i18n="num_players">Número de jugadores (2–10)</label>
+            <label data-i18n="num_players">Number of players (2–10)</label>
             <input id="seatCount" type="number" min="2" max="10" value="4" />
           </div>
           <div>
-            <label data-i18n="starting_lives">Vidas iniciales</label>
+            <label data-i18n="starting_lives">Starting lives</label>
             <input id="startingLives" type="number" min="1" max="99" value="7" />
           </div>
         </div>
         <div class="row" style="margin-top:8px">
-          <button id="btnConfigure" data-i18n="apply_settings">Aplicar ajustes</button>
-          <button id="btnStart" class="secondary" data-i18n="start_now">Empezar (manual)</button>
-          <button id="btnLobbyIntro" class="secondary mini" data-i18n="intro_button">Instrucciones</button>
+          <button id="btnConfigure" class="" data-i18n="apply_settings">Apply settings</button>
+          <button id="btnStart" class="secondary" data-i18n="start_now">Start now (manual)</button>
+          <button id="btnLobbyIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
         </div>
         <p class="muted" id="fillHint"></p>
       </div>
-      <p class="muted" data-i18n="share_hint">
-        Comparte esta página + el código con tus amigos.
-      </p>
+      <p class="muted" data-i18n="share_hint">Share this page + room code with your friends.</p>
     </section>
 
     <!-- Pre-round -->
     <section id="view-preround" class="panel hidden">
-      <h1 id="hdrRound">Ronda</h1>
+      <h1 id="hdrRound">Round</h1>
       <div class="row" id="orderBadges"></div>
       <div class="muted" id="firstSpeakerNote"></div>
     </section>
 
-    <!-- Bids -->
+    <!-- Bids / Round 1 prompt -->
     <section id="view-bids" class="panel hidden">
-      <h1 id="hdrBids">Pujas</h1>
+      <h1 id="hdrBids">Bidding</h1>
       <div id="bidsArea"></div>
     </section>
 
     <!-- Play -->
     <section id="view-play" class="panel hidden">
-      <div class="row"><h1 data-i18n="play">Jugar</h1></div>
+      <div class="row">
+        <h1 data-i18n="play">Play</h1>
+      </div>
       <div class="table" id="table"></div>
-      <h3 data-i18n="your_hand">Tu mano</h3>
+      <h3 data-i18n="your_hand">Your hand</h3>
       <div class="cards" id="myHand"></div>
       <div id="playHint" class="muted" style="margin-top:6px"></div>
       <div class="divider"></div>
-      <h3 data-i18n="summary">Resumen</h3>
-      <table class="summary">
-        <thead>
-          <tr>
-            <th data-i18n="player">Jugador</th>
-            <th data-i18n="wins">Victorias</th>
-            <th data-i18n="ask_delta">Ask Δ</th>
-            <th data-i18n="lives">Vidas</th>
-            <th data-i18n="bid">Puja</th>
-          </tr>
-        </thead>
-        <tbody id="sumBody"></tbody>
-      </table>
+      <h3 data-i18n="summary">Summary</h3>
+      <table class="summary"><thead><tr><th data-i18n="player">Player</th><th data-i18n="wins">Wins</th><th data-i18n="ask_delta">Ask Δ</th><th data-i18n="lives">Lives</th><th data-i18n="bid">Bid</th></tr></thead><tbody id="sumBody"></tbody></table>
       <div class="divider"></div>
-      <h3 data-i18n="hand_log">Registro de manos</h3>
+      <h3 data-i18n="hand_log">Hand log</h3>
       <div id="handLog" class="handlog"></div>
     </section>
 
     <!-- Round summary -->
     <section id="view-summary" class="panel hidden">
-      <h1 data-i18n="round_summary">Resumen de ronda</h1>
+      <h1 data-i18n="round_summary">Round summary</h1>
       <div id="roundBox"></div>
-      <div class="row"><button id="btnNextRound" data-i18n="next_round">Siguiente ronda</button></div>
+      <div class="row"><button id="btnNextRound" class="" data-i18n="next_round">Next round</button></div>
     </section>
   </div>
 
-  <!-- Footer overview -->
+  <!-- Footer -->
   <footer id="overview" class="overview hidden">
     <div class="left">
       <span id="roomName" class="roomname"></span>
@@ -146,12 +134,14 @@
       <div id="introBody"></div>
     </div>
   </div>
+
   <div id="roundModal" class="modal hidden">
     <div class="modal-content">
       <button class="close" id="closeRound">×</button>
       <div id="roundBody"></div>
     </div>
   </div>
+
   <div id="raffleModal" class="modal hidden">
     <div class="modal-content small">
       <div id="raffleBody" class="raffle-body"></div>
@@ -161,24 +151,20 @@
   <div id="centerNotice" class="center-notice hidden"></div>
   <div id="toast" class="toast hidden"></div>
 
-  <!-- === Scripts (orden MUY importante) === -->
-  <!-- 1) Socket.IO desde CDN -->
-  <script defer src="https://cdn.socket.io/4.7.5/socket.io.min.js" integrity="sha384-8JxK9u6aDSs1Oe9pFqF4Ck+0Zk6lTj0kVXEe4a56o6v1gL3rVdxYk6i1+6bpm0AU" crossorigin="anonymous"></script>
-
-  <!-- 2) Config del backend y override -->
-  <script defer src="/config.js"></script>
-  <script defer src="/socket-override.js"></script>
-
-  <!-- 3) Lógica del juego -->
-  <script defer src="/client.js"></script>
-
-  <!-- 4) Registro del Service Worker -->
+  <!-- === SCRIPTS (orden IMPORTANTE) === -->
+  <!-- 1) Config con la URL del backend -->
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js').catch(() => {});
-      });
-    }
+    // Si ya tienes /config.js, puedes quitar este bloque y usar tu archivo.
+    window.SG_BACKEND = 'https://survival-game-multiplayer-production.up.railway.app';
   </script>
+
+  <!-- 2) Socket.IO desde CDN (SIN integrity para evitar bloqueos SRI) -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+  <!-- 3) Override que fuerza la conexión al backend -->
+  <script src="/socket-override.js"></script>
+
+  <!-- 4) Tu lógica del cliente -->
+  <script src="/client.js"></script>
 </body>
 </html>
