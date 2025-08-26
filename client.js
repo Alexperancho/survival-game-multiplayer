@@ -1,213 +1,361 @@
-/* Survival Game — Cliente lobby (Create / Join room) con Socket.IO v4
-   Requiere que (1) el CDN de socket.io esté cargado y (2) socket-override.js
-   haya definido globalThis.SG_BACKEND y expuesto window.io (parchado).
-*/
-
-/* ========= Config ========= */
-const BACKEND_URL = (globalThis.SG_BACKEND || 'https://survival-game-multiplayer-production.up.railway.app').replace(/\/$/, '');
-const CONNECT_OPTS = {
-  transports: ['websocket'],         // evita intentos de polling a survivalgame.fun
-  withCredentials: false,
-  reconnection: true,
-  reconnectionAttempts: Infinity,
-  reconnectionDelay: 500,
-  reconnectionDelayMax: 2500,
-  timeout: 8000                      // timeout de conexión
+/* ========= helpers ========= */
+const $ = (s) => document.querySelector(s);
+const show = (id, yes=true) => document.getElementById(id).classList[yes?'remove':'add']('hidden');
+const centerNotice = (msg, dur=900) => {
+  const el = $('#centerNotice'); el.textContent = msg; show('centerNotice', true);
+  setTimeout(()=>show('centerNotice', false), dur);
+};
+const toast = (msg) => {
+  const t = $('#toast'); t.textContent = msg; show('toast', true);
+  setTimeout(()=>show('toast', false), 1400);
 };
 
-/* ========= Singleton Socket ========= */
-let _socket = null;
-function getSocket() {
-  if (_socket && _socket.connected) return _socket;
-
-  // Siempre reutilizamos el mismo Manager para no abrir 2 conexiones
-  if (_socket && !_socket.connected) {
-    try { _socket.disconnect(); } catch {}
-    _socket = null;
+/* ========= i18n mínimo ========= */
+const I18N = {
+  en: {
+    welcome_title: "Welcome",
+    your_name: "Your name",
+    room_name_opt: "Room name (optional)",
+    room_code_join: "Room code (to join)",
+    create_room: "Create room",
+    join_room: "Join room",
+    intro_button: "Instructions",
+    join_hint: "Create a new room (we'll generate the code), or join an existing one with its code.",
+    lobby: "Lobby",
+    num_players: "Number of players (2–10)",
+    starting_lives: "Starting lives",
+    apply_settings: "Apply settings",
+    start_now: "Start now (manual)",
+    share_hint: "Share this page + room code with your friends.",
+    play: "Play",
+    your_hand: "Your hand",
+    summary: "Summary",
+    player: "Player", wins: "Wins", ask_delta: "Ask Δ", lives: "Lives", bid: "Bid",
+    hand_log: "Hand log",
+    round_summary: "Round summary",
+    next_round: "Next round",
+    your_turn: "Your turn",
+    waiting_for: name => `Waiting for ${name}…`,
+    on_fire: "You're on fire!"
+  },
+  es: {
+    welcome_title: "Bienvenido",
+    your_name: "Tu nombre",
+    room_name_opt: "Nombre de la sala (opcional)",
+    room_code_join: "Código de sala (para unirse)",
+    create_room: "Crear sala",
+    join_room: "Unirse a sala",
+    intro_button: "Instrucciones",
+    join_hint: "Crea una sala nueva (generamos el código), o únete con un código existente.",
+    lobby: "Lobby",
+    num_players: "Número de jugadores (2–10)",
+    starting_lives: "Vidas iniciales",
+    apply_settings: "Aplicar ajustes",
+    start_now: "Empezar ahora (manual)",
+    share_hint: "Comparte esta página + el código con tus amigos.",
+    play: "Jugar",
+    your_hand: "Tu mano",
+    summary: "Resumen",
+    player: "Jugador", wins: "Victorias", ask_delta: "Ask Δ", lives: "Vidas", bid: "Puja",
+    hand_log: "Registro de manos",
+    round_summary: "Resumen de ronda",
+    next_round: "Siguiente ronda",
+    your_turn: "¡Tu turno!",
+    waiting_for: name => `Esperando a ${name}…`,
+    on_fire: "¡Estás on fire!"
   }
+};
+let LANG = (localStorage.getItem('sg_lang')||'en'); // en|es
 
-  // window.io viene del CDN; socket-override.js ya lo ha parcheado
-  _socket = window.io(BACKEND_URL, CONNECT_OPTS);
+/* ========= backend/socket ========= */
+const BACKEND = (window.SG_BACKEND) || 'https://survival-game-multiplayer-production.up.railway.app';
+console.log('[SG] Backend apuntando a →', BACKEND);
 
-  _socket.on('connect', () => {
-    sgLog('connect ✓', { id: _socket.id });
-  });
-
-  _socket.on('connect_error', (err) => {
-    sgWarn('connect_error', err?.message || err);
-  });
-
-  _socket.on('disconnect', (reason) => {
-    sgWarn('disconnect', reason);
-  });
-
-  // ---- Fallbacks de sala (por si falla el ACK) ----
-  _socket.on('room:created', (room) => {
-    sgLog('evt room:created', room);
-    dispatchDom('sg:room-created', { room });
-    showRoom(room);
-  });
-
-  _socket.on('room:joined', (room) => {
-    sgLog('evt room:joined', room);
-    dispatchDom('sg:room-joined', { room });
-    showRoom(room);
-  });
-
-  _socket.on('room:error', (err) => {
-    sgWarn('evt room:error', err);
-    alertUser('Error: ' + (err?.error || 'unknown'));
-  });
-
-  // Eventos útiles para tu lógica (ya los tenías)
-  _socket.on('room:player_joined', (p) => dispatchDom('sg:player-joined', p));
-  _socket.on('room:player_left',   (p) => dispatchDom('sg:player-left', p));
-  _socket.onAny((event, data) => {
-    if (String(event).startsWith('game:')) dispatchDom(event, data);
-  });
-
-  return _socket;
+if (!window.io) {
+  console.error('[SG] ERROR: socket.io CDN no está cargado');
 }
 
-/* ========= Utilidades ========= */
-function qs(sel) { return document.querySelector(sel); }
-function sgLog(...a) { console.log('[SG]', ...a); }
-function sgWarn(...a) { console.warn('[SG]', ...a); }
-function alertUser(msg) { try { alert(msg); } catch {} }
-function dispatchDom(type, detail) {
-  document.dispatchEvent(new CustomEvent(type, { detail }));
+const socket = io(BACKEND, {
+  transports: ['websocket','polling'],
+  withCredentials: false,
+  reconnection: true,
+  reconnectionAttempts: 10,
+  timeout: 6000
+});
+
+socket.on('connect', () => {
+  console.log('[SG] conectado ✓', { id: socket.id, url: BACKEND });
+});
+socket.on('connect_error', (err) => {
+  console.warn('[SG] connect_error:', err?.message || err);
+});
+
+/* ========= estado mínimo ========= */
+let ME = { id:null, name:null, host:false };
+let ROOM = { code:'', name:'', seats:4, startLives:7 };
+let CURRENT_TURN = null; // socketId o playerId
+let ON_FIRE = new Set();  // ids con on fire para resaltar cartas
+
+/* ========= UI: traducciones básicas ========= */
+function applyI18n() {
+  const t = I18N[LANG] || I18N.en;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const k = el.dataset.i18n;
+    const v = t[k];
+    if (typeof v === 'string') el.textContent = v;
+  });
+  $('#turnBadge').textContent = t.your_turn;
+}
+$('#langSelect').value = LANG;
+$('#langSelect').addEventListener('change', e=>{
+  LANG = e.target.value; localStorage.setItem('sg_lang', LANG); applyI18n();
+});
+applyI18n();
+
+/* ========= generación de código fiable ========= */
+const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sin 0,O,1,I
+function generateRoomCode(len=6){
+  let s=''; for(let i=0;i<len;i++){ s += CODE_CHARS[(Math.random()*CODE_CHARS.length)|0]; }
+  return s;
 }
 
-/** Emite con ACK; si no hay respuesta en X ms, hace fallback al patrón de eventos. */
-function emitWithAck(socket, event, data, { timeout = 3000 } = {}) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      sgWarn(`${event} timeout/err => usando fallback eventos`);
-      resolve(null); // null => quien llame sabrá que debe esperar eventos
-    }, timeout);
+/* ========= instructions ========= */
+const INTRO_HTML_EN = `
+  <h2>How to play</h2>
+  <ol>
+    <li>Create a room and share the code.</li>
+    <li>Set players and starting lives.</li>
+    <li>Each hand: play cards in turn; highest valid wins.</li>
+    <li>End of round: lives are adjusted; first to reach 0 is out.</li>
+  </ol>
+`;
+const INTRO_HTML_ES = `
+  <h2>Cómo se juega</h2>
+  <ol>
+    <li>Crea una sala y comparte el código.</li>
+    <li>Ajusta jugadores y vidas iniciales.</li>
+    <li>En cada mano: jugad en turno; la carta válida más alta gana.</li>
+    <li>Fin de ronda: se ajustan vidas; quien llega a 0, eliminado.</li>
+  </ol>
+`;
+function openIntro(){
+  $('#introBody').innerHTML = (LANG==='es') ? INTRO_HTML_ES : INTRO_HTML_EN;
+  show('introModal', true);
+}
+$('#btnOpenIntro').onclick = openIntro;
+$('#btnLobbyIntro').onclick = openIntro;
+$('#closeIntro').onclick = ()=>show('introModal', false);
 
-    try {
-      socket.timeout(timeout).emit(event, data, (err, res) => {
-        if (settled) return;
-        clearTimeout(timer);
-        settled = true;
-        if (err || (res && res.ok === false)) {
-          const message = err?.message || res?.error || 'unknown';
-          return reject(new Error(message));
-        }
-        resolve(res || { ok: true });
-      });
-    } catch (e) {
-      if (settled) return;
-      clearTimeout(timer);
-      settled = true;
-      reject(e);
+/* ========= navegación simple de vistas ========= */
+function goto(viewId){
+  ['view-join','view-lobby','view-preround','view-bids','view-play','view-summary'].forEach(id=>{
+    show(id, id===viewId);
+  });
+}
+
+/* ========= lobby: crear / unirse ========= */
+$('#createRoomBtn').onclick = () => {
+  const name = $('#playerName').value.trim() || 'Player';
+  const roomName = $('#roomNameInput').value.trim();
+  const code = generateRoomCode(6);
+  const seats = parseInt($('#seatCount')?.value || '4',10);
+  const startLives = parseInt($('#startingLives')?.value || '7',10);
+
+  ME.name = name;
+  socket.timeout(3500).emit('create_room', { code, roomName, seats, startLives, name }, (err, res)=>{
+    if (err) {
+      console.warn('[SG] create_room timeout/err => usando fallback events', err);
+      // fallback: asumimos éxito si el server emite luego "room_created"
+      return;
     }
-  });
-}
-
-/* ========= UI (Create / Join) ========= */
-const $name   = qs('#playerName');
-const $rname  = qs('#roomName');
-const $rcode  = qs('#roomCode');
-const $btnNew = qs('#createRoomBtn');
-const $btnIn  = qs('#joinRoomBtn');
-const $lang   = qs('#langSelect'); // si existe
-
-// Precarga desde localStorage
-try {
-  const saved = JSON.parse(localStorage.getItem('sg:prefs') || '{}');
-  if (saved.name)  $name && ($name.value = saved.name);
-  if (saved.lang)  $lang && ($lang.value = saved.lang);
-  if (saved.rname) $rname && ($rname.value = saved.rname);
-} catch {}
-
-function savePrefs() {
-  try {
-    localStorage.setItem('sg:prefs', JSON.stringify({
-      name:  $name?.value || '',
-      lang:  $lang?.value || 'EN',
-      rname: $rname?.value || ''
-    }));
-  } catch {}
-}
-
-async function onCreateRoomClick() {
-  const playerName = ($name?.value || '').trim();
-  const roomName   = ($rname?.value || '').trim();
-  const lang       = ($lang?.value || 'EN').trim().toUpperCase();
-
-  if (!playerName) return alertUser('Please enter your name');
-
-  savePrefs();
-  const socket = getSocket();
-
-  try {
-    const res = await emitWithAck(socket, 'create_room', { playerName, roomName, lang }, { timeout: 3500 });
-    if (res && res.ok && res.room) {
-      sgLog('create_room ACK ✓', res.room);
-      showRoom(res.room);
-    } else {
-      // No ACK => esperamos a fallback event (room:created)
-      sgLog('Esperando evento room:created…');
+    if (!res || res.ok!==true){
+      return toast((res && res.error) ? res.error : 'Failed to create room');
     }
-  } catch (e) {
-    sgWarn('create_room error', e?.message || e);
-    alertUser('Error creating room: ' + (e?.message || e));
+    afterRoomCreated(res.room || { code, roomName, seats, startLives });
+  });
+};
+
+socket.on('room_created', (payload)=>{
+  // para servidores que no usan ACK
+  if (!payload) return;
+  afterRoomCreated(payload);
+});
+
+function afterRoomCreated(room){
+  ROOM.code = room.code || ROOM.code;
+  ROOM.name = room.roomName || ROOM.name;
+  ROOM.seats = room.seats || ROOM.seats;
+  ROOM.startLives = room.startLives || ROOM.startLives;
+
+  $('#roomCodeBadge').textContent = ROOM.code;
+  centerNotice(`Room ${ROOM.code} ready`, 900);
+  goto('view-lobby');
+}
+
+$('#joinRoomBtn').onclick = () => {
+  const name = $('#playerName').value.trim() || 'Player';
+  const code = $('#roomCode').value.trim().toUpperCase();
+  if (!code || code.length < 4) return toast('Invalid code');
+  ME.name = name;
+
+  socket.timeout(3500).emit('join_room', { code, name }, (err, res)=>{
+    if (err) { console.warn('[SG] join_room timeout/err', err); return; }
+    if (!res || res.ok!==true) return toast(res?.error || 'Failed to join');
+    ROOM.code = code;
+    $('#roomCodeBadge').textContent = ROOM.code;
+    goto('view-lobby');
+  });
+};
+
+$('#btnConfigure').onclick = () => {
+  const seats = parseInt($('#seatCount').value,10);
+  const startLives = parseInt($('#startingLives').value,10);
+  socket.emit('configure_room', { code: ROOM.code, seats, startLives });
+  toast('Settings applied');
+};
+$('#btnStart').onclick = () => { socket.emit('start_now', { code: ROOM.code }); };
+
+/* ========= turno muy visual ========= */
+function setTurn(turnOwnerNameOrId, amI=false){
+  const badge = $('#turnBadge');
+  const hint = $('#playHint');
+  const t = I18N[LANG] || I18N.en;
+
+  if (amI){
+    badge.classList.remove('hidden');
+    hint.textContent = t.your_turn;
+  } else {
+    badge.classList.add('hidden');
+    const pretty = typeof turnOwnerNameOrId==='string' ? turnOwnerNameOrId : 'Opponent';
+    hint.textContent = (t.waiting_for(pretty));
   }
 }
 
-async function onJoinRoomClick() {
-  const playerName = ($name?.value || '').trim();
-  const roomCode   = ($rcode?.value || '').trim().toUpperCase();
-  const lang       = ($lang?.value || 'EN').trim().toUpperCase();
-
-  if (!playerName) return alertUser('Please enter your name');
-  if (!roomCode)   return alertUser('Please enter a room code');
-
-  savePrefs();
-  const socket = getSocket();
-
-  try {
-    const res = await emitWithAck(socket, 'join_room', { playerName, roomCode, lang }, { timeout: 3500 });
-    if (res && res.ok && res.room) {
-      sgLog('join_room ACK ✓', res.room);
-      showRoom(res.room);
-    } else {
-      sgLog('Esperando evento room:joined…');
-    }
-  } catch (e) {
-    sgWarn('join_room error', e?.message || e);
-    alertUser('Error joining room: ' + (e?.message || e));
-  }
+/* ========= hand log con mini-cartas ========= */
+function rankSuitFromCode(code){
+  // code: "AS","8D","TC"...
+  const c = String(code||'').trim().toUpperCase();
+  if (!c) return null;
+  const r = c.slice(0, c.length-1);
+  const s = c.slice(-1);
+  return { r, s };
+}
+function suitSymbol(s){
+  if (s==='H') return '♥';
+  if (s==='D') return '♦';
+  if (s==='S') return '♠';
+  if (s==='C') return '♣';
+  return '?';
+}
+function suitClass(s){
+  return (s==='H'||s==='D') ? 's-red' : 's-black';
+}
+function cardMini(code){
+  const rs = rankSuitFromCode(code);
+  if (!rs) return '';
+  return `<div class="card-mini"><div>${rs.r}</div><div class="s ${suitClass(rs.s)}">${suitSymbol(rs.s)}</div></div>`;
+}
+function renderMiniCardsList(list){
+  // admite "AS,8D,3S" o ['AS','8D','3S']
+  let arr = Array.isArray(list) ? list : String(list).split(/[,\s]+/).filter(Boolean);
+  return arr.map(cardMini).join('');
 }
 
-// Enlaza botones si existen
-$btnNew && ($btnNew.onclick = onCreateRoomClick);
-$btnIn  && ($btnIn.onclick  = onJoinRoomClick);
-
-/* ========= Render mínimo de sala =========
-   No toca tu lógica de juego: sólo navega visualmente y emite
-   un evento DOM que puedes usar para arrancar el tablero, etc.
+/* ejemplo de cómo el server podría mandar las manos jugadas: 
+   socket.on('hand_log', rows => renderHandLog(rows));
+   Donde rows = [{winner:'Alice', cards:['AS','8D','3S','TC']}, ...]
 */
-function showRoom(room) {
-  if (!room || !room.code) return;
-  sgLog('showRoom →', room.code, room);
-
-  // Evento para que otros scripts (tu lógica existente) inicien el juego
-  dispatchDom('sg:room-ready', { room });
-
-  // Ejemplo: actualiza URL con hash (opcional)
-  try {
-    const url = new URL(location.href);
-    url.hash = `#${room.code}`;
-    history.replaceState(null, '', url.toString());
-  } catch {}
+function renderHandLog(rows){
+  const box = $('#handLog');
+  if (!Array.isArray(rows)) return;
+  box.innerHTML = rows.map(r => {
+    const cards = renderMiniCardsList(r.cards||[]);
+    const win = r.winner ? `<span class="pill">🏆 ${r.winner}</span>` : '';
+    return `<div class="log-row">${win}${cards}</div>`;
+  }).join('');
 }
 
-// Conexión temprana (opcional)
-getSocket();
-sgLog('Backend:', BACKEND_URL);
+/* ========= ON FIRE (cliente) =========
+   Si el server te manda un resumen de ronda con datos por jugador, intenta
+   detectar: "damageDealt >= 5" y "noLosses === true".
+   Si tu payload es distinto, adapta esta función al formato real.
+*/
+function maybeOnFireFromSummary(summary){
+  // summary.players = [{id,name,damageDealt,losses,handCards:[...]}, ...]
+  if (!summary || !Array.isArray(summary.players)) return;
+  const t = I18N[LANG] || I18N.en;
+  summary.players.forEach(p=>{
+    if ((p.damageDealt|0) >= 5 && (p.losses|0) === 0){
+      ON_FIRE.add(p.id||p.name);
+      toast(t.on_fire);
+      // resalta las cartas del jugador (si están visibles)
+      if (p.id === ME.id || p.name === ME.name){
+        $('#myHand')?.classList.add('fire-glow');
+        setTimeout(()=>$('#myHand')?.classList.remove('fire-glow'), 6000);
+      }
+    }
+  });
+}
+
+/* ========= ejemplo de eventos del server =========
+   Ajusta los nombres si tu backend usa otros.
+*/
+socket.on('lobby_update', (payload)=>{
+  // payload.players: [{id,name,host},...]
+  const box = $('#playersLobby');
+  if (!payload || !Array.isArray(payload.players)) return;
+  box.innerHTML = payload.players.map(p=>`<span class="pill">${p.name}${p.host?' ⭐':''}</span>`).join(' ');
+  // host es quien creó la sala (para mostrar controles)
+  const amHost = !!payload.players.find(p=>p.id===socket.id && p.host);
+  $('#hostControls').style.display = amHost ? '' : 'none';
+});
+
+socket.on('start_play', (payload)=>{
+  goto('view-play');
+  // set turno inicial si llega
+  if (payload?.turnOwner){
+    const amI = (payload.turnOwner.id===socket.id) || (payload.turnOwner.name===ME.name);
+    setTurn(payload.turnOwner.name || 'Opponent', amI);
+  }
+  // pinta mano si llega
+  if (Array.isArray(payload.myHand)){
+    renderMyHand(payload.myHand);
+  }
+});
+
+socket.on('turn_changed', (who)=>{
+  const amI = (who?.id===socket.id) || (who?.name===ME.name);
+  setTurn(who?.name||'Opponent', amI);
+});
+
+socket.on('hand_log', renderHandLog);
+
+socket.on('round_summary', (sum)=>{
+  goto('view-summary');
+  // intenta detectar on-fire (si trae daño y pérdidas)
+  maybeOnFireFromSummary(sum);
+});
+
+$('#btnNextRound').onclick = () => {
+  socket.emit('next_round', { code: ROOM.code });
+};
+
+/* ========= pintar mano local ========= */
+function renderMyHand(cards){
+  const box = $('#myHand');
+  if (!Array.isArray(cards)) return;
+  // aplica on fire visual si estamos marcados
+  if (ON_FIRE.has(ME.id) || ON_FIRE.has(ME.name)) {
+    box.classList.add('fire-glow');
+  } else {
+    box.classList.remove('fire-glow');
+  }
+  box.innerHTML = cards.map(cardMini).join('');
+}
+
+/* ========= pequeños extras ========= */
+window.addEventListener('keydown', (e)=>{
+  if (e.key==='Escape'){ show('introModal', false); show('roundModal', false); }
+});
+
+/* ========= fin ========= */
