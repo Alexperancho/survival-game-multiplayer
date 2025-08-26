@@ -1,237 +1,194 @@
-// server.js — Survival Game backend (Express + Socket.IO v4)
-// ----------------------------------------------------------
-// - Crea y gestiona salas (create/join).
-// - Difunde estado de lobby (jugadores, host, ajustes).
-// - Permite configurar y arrancar la partida (eventos básicos).
-// - CORS preparado para https://survivalgame.fun + localhost.
-//
-// Requisitos en package.json:
-//   "dependencies": {
-//     "express": "^4.19.2",
-//     "socket.io": "^4.7.5",
-//     "cors": "^2.8.5"
-//   },
-//   "scripts": { "start": "node server.js" }
-//
-// Node 16+ recomendado (mejor 18+). Puerto: process.env.PORT o 3000.
+/**
+ * Survival Game — Socket.IO v4 backend
+ * Compatible con cliente que emite: 'create_room' y 'join_room'
+ * Responde SIEMPRE por ACK y también emite eventos 'room:*' (fallback)
+ */
 
 const express = require('express');
 const http = require('http');
-const cors = require('cors');
 const { Server } = require('socket.io');
+const crypto = require('crypto');
 
-// Muestra la versión de socket.io servidor (útil en logs)
-try {
-  console.log('Socket.IO server version:', require('socket.io/package.json').version);
-} catch (_) {}
-
-const app = express();
-
-// ===== CORS (HTTP) =====
-const ALLOWED_ORIGINS = [
+const PORT = process.env.PORT || 8080;
+const ORIGINS = [
   'https://survivalgame.fun',
   'http://localhost:3000',
-  process.env.FRONT_ORIGIN || '' // opcional: puedes pasar otro origen por ENV
-].filter(Boolean);
+  'http://127.0.0.1:3000'
+];
 
-app.use(cors({
-  origin: ALLOWED_ORIGINS,
-  methods: ['GET', 'POST'],
-  credentials: true
-}));
-
-// Rutas de salud
-app.get('/', (_req, res) => res.send('Survival Game server up'));
-app.get('/healthz', (_req, res) => res.json({ ok: true, ts: Date.now() }));
-
+const app = express();
 const server = http.createServer(app);
-
-// ===== Socket.IO (WS) =====
 const io = new Server(server, {
-  cors: {
-    origin: ALLOWED_ORIGINS,
-    methods: ['GET', 'POST'],
-    credentials: true
-  }
+  cors: { origin: ORIGINS, methods: ['GET', 'POST'] },
+  transports: ['websocket', 'polling'],
+  allowEIO3: false
 });
 
-// ===== Estado en memoria =====
-// rooms: { [code]: { code, name, hostId, createdAt, settings, players: Map<socketId, {id,name}> } }
+// Respuesta simple para health-check
+app.get('/', (_req, res) => {
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.end('Survival Game server up');
+});
+
+// ---- Estado en memoria ----
+/** rooms: Map<roomCode, { name, lang, players: Map<socketId, {name}>, createdAt }> */
 const rooms = new Map();
 
-function genRoomCode() {
-  const alphabet = 'ABCDEFGHJKLMNPRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 5; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return code;
-}
-function ensureRoomCode() {
-  let code;
-  do { code = genRoomCode(); } while (rooms.has(code));
-  return code;
-}
-function roomSummary(room) {
-  return {
-    code: room.code,
-    name: room.name || '',
-    hostId: room.hostId,
-    settings: room.settings,
-    players: Array.from(room.players.values())
-  };
-}
-function notifyLobby(room) {
-  io.to(room.code).emit('lobby-state', roomSummary(room));
-}
-function onEither(socket, names, handler) {
-  names.forEach(n => socket.on(n, handler));
+function genRoomCode(len = 6) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin 0/O/1/I
+  let out = '';
+  while (out.length < len) {
+    const b = crypto.randomBytes(1)[0] % alphabet.length;
+    out += alphabet[b];
+  }
+  return out;
 }
 
-// ===== Lógica principal =====
+function safeRoomSnapshot(code) {
+  const r = rooms.get(code);
+  if (!r) return null;
+  return {
+    code,
+    name: r.name,
+    lang: r.lang,
+    players: Array.from(r.players.entries()).map(([id, p]) => ({ id, name: p.name })),
+    createdAt: r.createdAt
+  };
+}
+
 io.on('connection', (socket) => {
   console.log('Client connected', socket.id);
 
-  // Crear sala
-  onEither(socket, ['create-room', 'createRoom'], (payload = {}) => {
+  // ---- Crear sala ----
+  socket.on('create_room', (payload = {}, ack) => {
     try {
-      const playerName = (payload.playerName || payload.name || 'Player').toString().slice(0, 20);
-      const roomName = (payload.roomName || payload.nameRoom || '').toString().slice(0, 40);
+      const playerName = String(payload.playerName || '').trim();
+      const roomName   = String(payload.roomName   || '').trim();
+      const lang       = String(payload.lang       || 'EN').trim().toUpperCase();
 
-      const code = ensureRoomCode();
+      if (!playerName) throw new Error('MISSING_PLAYER_NAME');
+
+      let code;
+      do { code = genRoomCode(6); } while (rooms.has(code));
+
       const room = {
-        code,
-        name: roomName,
-        hostId: socket.id,
-        createdAt: Date.now(),
-        settings: {
-          seatCount: 4,
-          startingLives: 7,
-          ...((payload.settings && typeof payload.settings === 'object') ? payload.settings : {})
-        },
-        players: new Map()
+        name: roomName || 'Room',
+        lang,
+        players: new Map(),
+        createdAt: Date.now()
       };
-
-      room.players.set(socket.id, { id: socket.id, name: playerName });
       rooms.set(code, room);
 
+      // Une al creador
       socket.join(code);
-      socket.emit('room-created', { roomCode: code, ...roomSummary(room) });
-      notifyLobby(room);
-      console.log(`Room ${code} created by ${socket.id} (${playerName})`);
+      socket.data.roomCode = code;
+      socket.data.playerName = playerName;
+      room.players.set(socket.id, { name: playerName });
+
+      const snapshot = safeRoomSnapshot(code);
+
+      // 1) ACK
+      if (typeof ack === 'function') {
+        ack({ ok: true, room: snapshot });
+      }
+      // 2) Fallback por evento
+      socket.emit('room:created', snapshot);
+      io.to(code).emit('room:player_joined', { id: socket.id, name: playerName });
+
+      console.log(`[ROOM ${code}] created by ${playerName}`);
     } catch (err) {
-      console.error('create-room error', err);
-      socket.emit('error-message', { type: 'create-room', message: 'Failed to create room.' });
+      const error = { ok: false, error: err.message || 'CREATE_ROOM_FAILED' };
+      if (typeof ack === 'function') ack(error);
+      socket.emit('room:error', error);
     }
   });
 
-  // Unirse a sala
-  onEither(socket, ['join-room', 'joinRoom'], (payload = {}) => {
+  // ---- Unirse a sala ----
+  socket.on('join_room', (payload = {}, ack) => {
     try {
-      const playerName = (payload.playerName || payload.name || 'Player').toString().slice(0, 20);
-      const code = ((payload.roomCode || payload.code || '') + '').toUpperCase().trim();
+      const playerName = String(payload.playerName || '').trim();
+      const code       = String(payload.roomCode   || '').trim().toUpperCase();
+      if (!playerName) throw new Error('MISSING_PLAYER_NAME');
+      if (!rooms.has(code)) throw new Error('ROOM_NOT_FOUND');
 
       const room = rooms.get(code);
-      if (!room) return socket.emit('error-message', { type: 'join-room', message: 'Room not found.' });
 
-      if (room.settings?.seatCount && room.players.size >= room.settings.seatCount) {
-        return socket.emit('error-message', { type: 'join-room', message: 'Room is full.' });
-      }
-
-      room.players.set(socket.id, { id: socket.id, name: playerName });
       socket.join(code);
+      socket.data.roomCode = code;
+      socket.data.playerName = playerName;
+      room.players.set(socket.id, { name: playerName });
 
-      socket.emit('joined-room', { roomCode: code, you: { id: socket.id, name: playerName } });
-      io.to(code).emit('player-joined', { id: socket.id, name: playerName });
-      notifyLobby(room);
+      const snapshot = safeRoomSnapshot(code);
 
-      console.log(`Socket ${socket.id} joined room ${code} as ${playerName}`);
-    } catch (err) {
-      console.error('join-room error', err);
-      socket.emit('error-message', { type: 'join-room', message: 'Failed to join room.' });
-    }
-  });
-
-  // Configurar sala (solo host)
-  onEither(socket, ['configure', 'apply-settings', 'applySettings'], (payload = {}) => {
-    try {
-      const code = Array.from(socket.rooms).find(r => rooms.has(r));
-      if (!code) return;
-      const room = rooms.get(code);
-      if (!room) return;
-      if (room.hostId !== socket.id) {
-        return socket.emit('error-message', { type: 'configure', message: 'Only host can configure.' });
+      // 1) ACK
+      if (typeof ack === 'function') {
+        ack({ ok: true, room: snapshot });
       }
-      const newSettings = {};
-      if (payload.seatCount) newSettings.seatCount = Math.max(2, Math.min(10, Number(payload.seatCount)));
-      if (payload.startingLives) newSettings.startingLives = Math.max(1, Math.min(99, Number(payload.startingLives)));
-      room.settings = { ...room.settings, ...newSettings };
+      // 2) Fallback evento
+      socket.emit('room:joined', snapshot);
+      socket.to(code).emit('room:player_joined', { id: socket.id, name: playerName });
 
-      io.to(code).emit('config-updated', room.settings);
-      notifyLobby(room);
-      console.log(`Room ${code} config updated`, room.settings);
+      console.log(`[ROOM ${code}] ${playerName} joined`);
     } catch (err) {
-      console.error('configure error', err);
-      socket.emit('error-message', { type: 'configure', message: 'Failed to apply settings.' });
+      const error = { ok: false, error: err.message || 'JOIN_ROOM_FAILED' };
+      if (typeof ack === 'function') ack(error);
+      socket.emit('room:error', error);
     }
   });
 
-  // Empezar partida (solo host)
-  onEither(socket, ['start', 'start-now', 'start_now', 'startGame'], () => {
-    try {
-      const code = Array.from(socket.rooms).find(r => rooms.has(r));
-      if (!code) return;
-      const room = rooms.get(code);
-      if (!room) return;
-      if (room.hostId !== socket.id) {
-        return socket.emit('error-message', { type: 'start', message: 'Only host can start.' });
-      }
-      io.to(code).emit('game-started', { roomCode: code, startedAt: Date.now() });
-      console.log(`Room ${code} started by host ${socket.id}`);
-    } catch (err) {
-      console.error('start error', err);
-      socket.emit('error-message', { type: 'start', message: 'Failed to start game.' });
+  // ---- Broadcast “passthrough” para tu lógica de juego ----
+  // Cualquier evento 'game:*' lo reenvía a la sala del emisor.
+  socket.onAny((event, data, cb) => {
+    if (!event || typeof event !== 'string') return;
+    if (!event.startsWith('game:')) return;
+    const code = socket.data.roomCode;
+    if (!code || !rooms.has(code)) {
+      const error = { ok: false, error: 'NOT_IN_ROOM' };
+      if (typeof cb === 'function') cb(error);
+      return;
     }
+    // Envía a todos (incluido emisor) para mantener la lógica existente
+    io.to(code).emit(event, { from: socket.id, ...data });
+    if (typeof cb === 'function') cb({ ok: true });
   });
 
-  // Reenvíos genéricos de eventos de juego (ejemplo)
-  onEither(socket, ['play-card', 'playCard'], (data) => {
-    const code = Array.from(socket.rooms).find(r => rooms.has(r));
+  // ---- Salida / limpieza ----
+  function leaveCurrentRoom() {
+    const code = socket.data.roomCode;
     if (!code) return;
-    socket.to(code).emit('card-played', { from: socket.id, ...data });
+    const room = rooms.get(code);
+    if (!room) return;
+
+    room.players.delete(socket.id);
+    socket.leave(code);
+
+    io.to(code).emit('room:player_left', { id: socket.id, name: socket.data.playerName });
+
+    // Borra sala si se queda vacía
+    if (room.players.size === 0) {
+      rooms.delete(code);
+      console.log(`[ROOM ${code}] removed (empty)`);
+    }
+    socket.data.roomCode = undefined;
+  }
+
+  socket.on('leave_room', (_payload, ack) => {
+    leaveCurrentRoom();
+    if (typeof ack === 'function') ack({ ok: true });
   });
 
-  onEither(socket, ['next-round', 'nextRound'], () => {
-    const code = Array.from(socket.rooms).find(r => rooms.has(r));
-    if (!code) return;
-    io.to(code).emit('round-next', { ts: Date.now() });
-  });
-
-  // Desconexión
   socket.on('disconnect', (reason) => {
-    let room;
-    for (const r of rooms.values()) {
-      if (r.players.has(socket.id)) { room = r; break; }
-    }
-    if (room) {
-      room.players.delete(socket.id);
-      io.to(room.code).emit('player-left', { id: socket.id });
-      if (room.hostId === socket.id) {
-        const [next] = room.players.keys();
-        room.hostId = next || null;
-      }
-      if (room.players.size === 0) {
-        rooms.delete(room.code);
-        console.log(`Room ${room.code} deleted (empty)`);
-      } else {
-        notifyLobby(room);
-      }
-    }
+    leaveCurrentRoom();
     console.log('Client disconnected', socket.id, reason);
   });
 });
 
-// ===== Arranque =====
-const PORT = process.env.PORT || 3000;
+// Endpoint de depuración (opcional)
+app.get('/rooms', (_req, res) => {
+  res.json(Array.from(rooms.keys()));
+});
+
 server.listen(PORT, () => {
   console.log(`Survival Game server listening on http://0.0.0.0:${PORT}`);
-  console.log('Allowed origins:', ALLOWED_ORIGINS.join(', ') || '(none)');
+  console.log(`Allowed origins: ${ORIGINS.join(', ')}`);
 });
