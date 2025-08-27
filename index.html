@@ -3,156 +3,600 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Survival Game — Online</title>
-  <meta name="theme-color" content="#000000" />
+  <title>Survival Game — Online Multiplayer</title>
+  <meta name="description" content="Play Survival Game online with friends. Strategic card game for 2-10 players." />
+  <meta name="theme-color" content="#1a1a1a" />
+  <meta name="color-scheme" content="dark light" />
+  
+  <!-- PWA Support -->
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icons/favicon.ico" sizes="any" />
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#1a1a1a" />
+  
+  <!-- Preconnect to improve performance -->
+  <link rel="preconnect" href="https://cdn.socket.io" crossorigin />
+  <link rel="preconnect" href="https://survival-game-multiplayer-production.up.railway.app" crossorigin />
+  
+  <!-- Critical CSS inlined -->
+  <style>
+    /* Critical above-the-fold styles */
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --secondary: #64748b;
+      --success: #059669;
+      --error: #dc2626;
+      --warning: #d97706;
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --shadow: rgba(0, 0, 0, 0.1);
+    }
+    
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --border: #334155;
+        --text: #f1f5f9;
+        --text-muted: #94a3b8;
+        --shadow: rgba(0, 0, 0, 0.3);
+      }
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-size: 18px;
+      color: var(--text-muted);
+    }
+    
+    .hidden {
+      display: none !important;
+    }
+    
+    .screen-transition {
+      opacity: 1;
+      transition: opacity 0.3s ease-in-out;
+    }
+  </style>
+  
+  <!-- Main stylesheet loaded async -->
+  <link rel="stylesheet" href="/styles.css" media="print" onload="this.media='all'" />
+  <noscript><link rel="stylesheet" href="/styles.css" /></noscript>
 </head>
 <body>
-  <div class="wrap">
-    <!-- JOIN -->
-    <section id="view-join" class="panel">
-      <h1 data-i18n="welcome_title">Welcome</h1>
-      <div class="grid3">
-        <div>
-          <label data-i18n="your_name">Your name</label>
-          <input id="playerName" maxlength="20" placeholder="Alice" />
-        </div>
-        <div>
-          <label data-i18n="room_name_opt">Room name (optional)</label>
-          <input id="roomNameInput" maxlength="40" placeholder="Friday Night" />
-        </div>
-        <div>
-          <label data-i18n="room_code_join">Room code (to join)</label>
-          <input id="roomCode" maxlength="8" placeholder="e.g. ZETA42" />
-        </div>
+  <!-- Loading indicator -->
+  <div id="loadingScreen" class="loading">
+    <div>
+      <div class="loading-spinner" style="margin-right: 12px;"></div>
+      <span data-i18n="loading">Loading game...</span>
+    </div>
+  </div>
+
+  <!-- Connection status indicator -->
+  <div id="connectionStatus" class="connection-status"></div>
+
+  <!-- Audio controls (floating) -->
+  <div id="audioControls" class="audio-controls">
+    <button id="audioToggle" class="audio-btn" title="Toggle sound" aria-label="Toggle sound">
+      <span class="audio-icon">🔊</span>
+    </button>
+    <input type="range" id="volumeSlider" min="0" max="100" value="70" class="volume-slider hidden" />
+  </div>
+
+  <!-- Main game container -->
+  <div class="wrap" id="gameContainer" style="display: none;">
+    
+    <!-- JOIN VIEW -->
+    <section id="view-join" class="panel screen-transition">
+      <div class="panel-header">
+        <h1 data-i18n="welcome_title">🎮 Survival Game</h1>
+        <p class="subtitle" data-i18n="welcome_subtitle">Strategic multiplayer card game</p>
       </div>
-      <div class="row" style="margin-top:8px">
-        <button id="createRoomBtn" data-i18n="create_room">Create room</button>
-        <button id="joinRoomBtn" class="secondary" data-i18n="join_room">Join room</button>
-        <select id="langSelect" style="max-width:120px">
-          <option value="en">EN</option>
-          <option value="es">ES</option>
-        </select>
-        <button id="btnOpenIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
+      
+      <form id="joinForm" class="form-grid" novalidate>
+        <div class="input-group">
+          <label for="playerName" data-i18n="your_name">Your name</label>
+          <input 
+            id="playerName" 
+            name="playerName"
+            type="text"
+            maxlength="20" 
+            placeholder="Enter your name"
+            autocomplete="nickname"
+            required
+            class="input-primary"
+            data-i18n-placeholder="name_placeholder"
+          />
+          <div class="input-feedback" id="nameError"></div>
+        </div>
+        
+        <div class="input-group">
+          <label for="roomNameInput" data-i18n="room_name_opt">Room name (optional)</label>
+          <input 
+            id="roomNameInput" 
+            name="roomName"
+            type="text"
+            maxlength="40" 
+            placeholder="Friday Night Game"
+            class="input-secondary"
+            data-i18n-placeholder="room_name_placeholder"
+          />
+        </div>
+        
+        <div class="input-group">
+          <label for="roomCode" data-i18n="room_code_join">Room code (to join existing)</label>
+          <input 
+            id="roomCode" 
+            name="roomCode"
+            type="text"
+            maxlength="8" 
+            placeholder="e.g. ZETA42"
+            class="input-secondary code-input"
+            autocomplete="off"
+            data-i18n-placeholder="room_code_placeholder"
+          />
+          <div class="input-feedback" id="codeError"></div>
+        </div>
+      </form>
+
+      <div class="action-row">
+        <button id="createRoomBtn" type="button" class="btn btn-primary" data-i18n="create_room">
+          <span class="btn-icon">➕</span>
+          <span class="btn-text">Create Room</span>
+          <span class="btn-loading hidden">Creating...</span>
+        </button>
+        
+        <button id="joinRoomBtn" type="button" class="btn btn-secondary" data-i18n="join_room">
+          <span class="btn-icon">🚪</span>
+          <span class="btn-text">Join Room</span>
+          <span class="btn-loading hidden">Joining...</span>
+        </button>
       </div>
-      <p class="muted" data-i18n="join_hint">Create a new room (we'll generate the code), or join an existing one with its code.</p>
+
+      <div class="settings-row">
+        <div class="setting-group">
+          <label for="langSelect" data-i18n="language">Language</label>
+          <select id="langSelect" class="select-primary">
+            <option value="en">🇺🇸 English</option>
+            <option value="es">🇪🇸 Español</option>
+          </select>
+        </div>
+        
+        <button id="btnOpenIntro" class="btn btn-ghost btn-sm" data-i18n="intro_button">
+          <span class="btn-icon">❓</span>
+          <span class="btn-text">How to Play</span>
+        </button>
+      </div>
+
+      <div class="help-text">
+        <p data-i18n="join_hint">Create a new room and invite friends, or join an existing room with its code.</p>
+      </div>
     </section>
 
-    <!-- LOBBY -->
-    <section id="view-lobby" class="panel hidden">
-      <h1><span data-i18n="lobby">Lobby</span> <span id="roomCodeBadge" class="pill"></span></h1>
-      <div id="playersLobby" class="row"></div>
+    <!-- LOBBY VIEW -->
+    <section id="view-lobby" class="panel screen-transition hidden">
+      <div class="panel-header">
+        <h1>
+          <span data-i18n="lobby">Lobby</span>
+          <span id="roomCodeBadge" class="room-code-badge"></span>
+          <button id="copyRoomCode" class="copy-btn" title="Copy room code" aria-label="Copy room code">📋</button>
+        </h1>
+        <div class="lobby-stats">
+          <span id="playerCount" class="stat">
+            <span class="stat-icon">👥</span>
+            <span class="stat-value">0</span>
+            <span class="stat-label">players</span>
+          </span>
+        </div>
+      </div>
 
-      <div id="hostControls" class="">
-        <div class="grid2">
-          <div>
-            <label data-i18n="num_players">Number of players (2–10)</label>
-            <input id="seatCount" type="number" min="2" max="10" value="4" />
+      <div class="players-section">
+        <h3 data-i18n="players_in_room">Players in room</h3>
+        <div id="playersLobby" class="players-grid"></div>
+      </div>
+
+      <!-- Host Controls -->
+      <div id="hostControls" class="host-controls">
+        <h3 data-i18n="game_settings">Game Settings</h3>
+        
+        <div class="settings-grid">
+          <div class="setting-item">
+            <label for="seatCount" data-i18n="num_players">Max Players (2–10)</label>
+            <div class="number-input-group">
+              <button type="button" class="btn-stepper" data-action="decrease" data-target="seatCount">−</button>
+              <input id="seatCount" type="number" min="2" max="10" value="4" class="number-input" />
+              <button type="button" class="btn-stepper" data-action="increase" data-target="seatCount">+</button>
+            </div>
+            <small class="help-text" data-i18n="players_help">Recommended: 3-6 players</small>
           </div>
-          <div>
-            <label data-i18n="starting_lives">Starting lives</label>
-            <input id="startingLives" type="number" min="1" max="99" value="7" />
+          
+          <div class="setting-item">
+            <label for="startingLives" data-i18n="starting_lives">Starting Lives</label>
+            <div class="number-input-group">
+              <button type="button" class="btn-stepper" data-action="decrease" data-target="startingLives">−</button>
+              <input id="startingLives" type="number" min="1" max="20" value="7" class="number-input" />
+              <button type="button" class="btn-stepper" data-action="increase" data-target="startingLives">+</button>
+            </div>
+            <small class="help-text" data-i18n="lives_help">Higher = longer game</small>
           </div>
         </div>
 
-        <div class="row" style="margin-top:8px">
-          <button id="btnConfigure" data-i18n="apply_settings">Apply settings</button>
-          <button id="btnStart" class="secondary" data-i18n="start_now">Start now (manual)</button>
-          <button id="btnLobbyIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
+        <div class="host-actions">
+          <button id="btnConfigure" class="btn btn-secondary" data-i18n="apply_settings">
+            <span class="btn-icon">⚙️</span>
+            <span class="btn-text">Apply Settings</span>
+          </button>
+          
+          <button id="btnStart" class="btn btn-primary" data-i18n="start_game">
+            <span class="btn-icon">🚀</span>
+            <span class="btn-text">Start Game</span>
+          </button>
+          
+          <button id="btnLobbyIntro" class="btn btn-ghost btn-sm" data-i18n="intro_button">
+            <span class="btn-icon">❓</span>
+            <span class="btn-text">Rules</span>
+          </button>
         </div>
 
-        <p class="muted" id="fillHint"></p>
+        <div id="gameReadyStatus" class="ready-status">
+          <div class="status-indicator" id="statusIndicator">
+            <span class="status-dot"></span>
+            <span class="status-text" id="statusText" data-i18n="waiting_for_players">Waiting for players...</span>
+          </div>
+        </div>
       </div>
 
-      <p class="muted" data-i18n="share_hint">Share this page + room code with your friends.</p>
+      <div class="share-section">
+        <h3 data-i18n="invite_friends">Invite Friends</h3>
+        <div class="share-options">
+          <div class="share-link-container">
+            <input type="text" id="shareLink" readonly class="share-link-input" />
+            <button id="copyLink" class="btn btn-ghost btn-sm">📋 Copy</button>
+          </div>
+          <div class="share-buttons">
+            <button id="shareWhatsApp" class="btn btn-share whatsapp">WhatsApp</button>
+            <button id="shareTelegram" class="btn btn-share telegram">Telegram</button>
+            <button id="shareNative" class="btn btn-share native hidden">Share</button>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <!-- PRE-ROUND -->
-    <section id="view-preround" class="panel hidden">
-      <h1 id="hdrRound">Round</h1>
-      <div class="row" id="orderBadges"></div>
-      <div class="muted" id="firstSpeakerNote"></div>
+    <!-- PRE-ROUND VIEW -->
+    <section id="view-preround" class="panel screen-transition hidden">
+      <div class="panel-header">
+        <h1 id="hdrRound">Round 1</h1>
+        <div class="round-info">
+          <span id="roundNumber" class="round-badge">Round 1</span>
+        </div>
+      </div>
+      
+      <div class="round-setup">
+        <h3 data-i18n="turn_order">Turn Order</h3>
+        <div id="orderBadges" class="turn-order-list"></div>
+        <div id="firstSpeakerNote" class="first-speaker-note"></div>
+      </div>
+      
+      <div class="round-actions">
+        <button id="btnReadyForBids" class="btn btn-primary" data-i18n="ready_to_bid">Ready to Bid</button>
+      </div>
     </section>
 
-    <!-- BIDS -->
-    <section id="view-bids" class="panel hidden">
-      <h1 id="hdrBids">Bidding</h1>
-      <div id="bidsArea"></div>
+    <!-- BIDS VIEW -->
+    <section id="view-bids" class="panel screen-transition hidden">
+      <div class="panel-header">
+        <h1 id="hdrBids">Bidding Phase</h1>
+        <div class="bid-timer" id="bidTimer"></div>
+      </div>
+      
+      <div id="bidsArea" class="bids-container">
+        <div class="bid-instructions">
+          <p data-i18n="bid_instructions">Choose how many tricks you think you'll win this round.</p>
+        </div>
+        
+        <div class="bid-options" id="bidButtons"></div>
+        
+        <div class="bids-summary" id="bidsSummary">
+          <h4 data-i18n="current_bids">Current Bids</h4>
+          <div id="bidsDisplay" class="bids-list"></div>
+        </div>
+      </div>
     </section>
 
-    <!-- PLAY -->
-    <section id="view-play" class="panel hidden">
-      <div class="row">
-        <h1 data-i18n="play">Play</h1>
-        <div id="turnBadge" class="turn-badge hidden">Your turn</div>
+    <!-- PLAY VIEW -->
+    <section id="view-play" class="panel screen-transition hidden">
+      <div class="play-header">
+        <div class="play-title">
+          <h1 data-i18n="play">Playing</h1>
+          <div id="turnBadge" class="turn-badge hidden">
+            <span class="pulse-dot"></span>
+            <span data-i18n="your_turn">Your Turn</span>
+          </div>
+        </div>
+        
+        <div class="game-info">
+          <span id="trickNumber" class="trick-badge">Trick 1/13</span>
+          <span id="trumpSuit" class="trump-badge">♠️ Trump</span>
+        </div>
       </div>
 
-      <div class="table" id="table"></div>
+      <!-- Game Table -->
+      <div class="game-table">
+        <div id="table" class="table-area">
+          <div class="table-center">
+            <div id="currentTrick" class="current-trick"></div>
+            <div id="tableInfo" class="table-info">
+              <span id="leadSuit" class="lead-suit"></span>
+              <span id="trickWinner" class="trick-winner"></span>
+            </div>
+          </div>
+          <div id="tableCards" class="table-cards"></div>
+        </div>
+      </div>
 
-      <h3 data-i18n="your_hand">Your hand</h3>
-      <div class="cards" id="myHand"></div>
-      <div id="playHint" class="turn-hint muted" style="margin-top:6px"></div>
+      <!-- Player's Hand -->
+      <div class="hand-section">
+        <h3 data-i18n="your_hand">Your Hand</h3>
+        <div id="myHand" class="hand-cards"></div>
+        <div id="playHint" class="play-hint"></div>
+      </div>
 
-      <div class="divider"></div>
-
-      <h3 data-i18n="summary">Summary</h3>
-      <table class="summary">
-        <thead>
-          <tr>
-            <th data-i18n="player">Player</th>
-            <th data-i18n="wins">Wins</th>
-            <th data-i18n="ask_delta">Ask Δ</th>
-            <th data-i18n="lives">Lives</th>
-            <th data-i18n="bid">Bid</th>
-          </tr>
-        </thead>
-        <tbody id="sumBody"></tbody>
-      </table>
-
-      <div class="divider"></div>
-
-      <h3 data-i18n="hand_log">Hand log</h3>
-      <div id="handLog" class="handlog"></div>
+      <!-- Game Summary -->
+      <div class="game-summary collapsible">
+        <button class="collapsible-header" id="summaryToggle">
+          <h3 data-i18n="game_status">Game Status</h3>
+          <span class="toggle-icon">▼</span>
+        </button>
+        
+        <div class="collapsible-content" id="summaryContent">
+          <div class="summary-table-container">
+            <table class="summary-table">
+              <thead>
+                <tr>
+                  <th data-i18n="player">Player</th>
+                  <th data-i18n="bid">Bid</th>
+                  <th data-i18n="wins">Wins</th>
+                  <th data-i18n="score">Score</th>
+                  <th data-i18n="lives">Lives</th>
+                </tr>
+              </thead>
+              <tbody id="sumBody"></tbody>
+            </table>
+          </div>
+          
+          <div class="hand-log-section">
+            <h4 data-i18n="recent_plays">Recent Plays</h4>
+            <div id="handLog" class="hand-log"></div>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <!-- ROUND SUMMARY -->
-    <section id="view-summary" class="panel hidden">
-      <h1 data-i18n="round_summary">Round summary</h1>
-      <div id="roundBox"></div>
-      <div class="row"><button id="btnNextRound" data-i18n="next_round">Next round</button></div>
+    <!-- ROUND SUMMARY VIEW -->
+    <section id="view-summary" class="panel screen-transition hidden">
+      <div class="panel-header">
+        <h1 data-i18n="round_results">Round Results</h1>
+      </div>
+      
+      <div id="roundBox" class="round-results">
+        <div class="results-table-container">
+          <table class="results-table">
+            <thead>
+              <tr>
+                <th data-i18n="player">Player</th>
+                <th data-i18n="bid">Bid</th>
+                <th data-i18n="actual">Actual</th>
+                <th data-i18n="points">Points</th>
+                <th data-i18n="lives_lost">Lives Lost</th>
+                <th data-i18n="remaining_lives">Lives Left</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+          </table>
+        </div>
+        
+        <div id="eliminatedPlayers" class="eliminated-section hidden">
+          <h3 data-i18n="eliminated">Eliminated This Round</h3>
+          <div id="eliminatedList" class="eliminated-list"></div>
+        </div>
+        
+        <div id="gameOverSection" class="game-over-section hidden">
+          <h2 data-i18n="game_over">Game Over!</h2>
+          <div id="winners" class="winners-section"></div>
+        </div>
+      </div>
+      
+      <div class="round-actions">
+        <button id="btnNextRound" class="btn btn-primary" data-i18n="continue_game">
+          <span class="btn-icon">➡️</span>
+          <span class="btn-text">Next Round</span>
+        </button>
+        
+        <button id="btnEndGame" class="btn btn-secondary hidden" data-i18n="end_game">
+          <span class="btn-icon">🏁</span>
+          <span class="btn-text">End Game</span>
+        </button>
+      </div>
     </section>
   </div>
 
-  <!-- (ELIMINADO el footer/overview que te molestaba) -->
-
-  <!-- Intro / Instructions Modal -->
-  <div id="introModal" class="modal hidden">
+  <!-- MODALS -->
+  
+  <!-- Instructions Modal -->
+  <div id="introModal" class="modal" role="dialog" aria-labelledby="introTitle" aria-hidden="true">
+    <div class="modal-backdrop" id="introBackdrop"></div>
     <div class="modal-content">
-      <button class="close" id="closeIntro">×</button>
-      <div id="introBody"></div>
+      <div class="modal-header">
+        <h2 id="introTitle" data-i18n="game_instructions">Game Instructions</h2>
+        <button class="modal-close" id="closeIntro" aria-label="Close instructions">×</button>
+      </div>
+      <div class="modal-body" id="introBody">
+        <div class="instructions-content">
+          <!-- Instructions will be loaded here -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="gotItBtn" data-i18n="got_it">Got It!</button>
+      </div>
     </div>
   </div>
 
   <!-- Round Help Modal -->
-  <div id="roundModal" class="modal hidden">
+  <div id="roundModal" class="modal" role="dialog" aria-labelledby="roundTitle" aria-hidden="true">
+    <div class="modal-backdrop" id="roundBackdrop"></div>
     <div class="modal-content">
-      <button class="close" id="closeRound">×</button>
-      <div id="roundBody"></div>
+      <div class="modal-header">
+        <h2 id="roundTitle" data-i18n="round_help">Round Help</h2>
+        <button class="modal-close" id="closeRound" aria-label="Close help">×</button>
+      </div>
+      <div class="modal-body" id="roundBody"></div>
     </div>
   </div>
 
-  <!-- Avisos -->
-  <div id="centerNotice" class="center-notice hidden"></div>
-  <div id="toast" class="toast hidden"></div>
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal" role="dialog" aria-labelledby="settingsTitle" aria-hidden="true">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="settingsTitle" data-i18n="settings">Settings</h2>
+        <button class="modal-close" aria-label="Close settings">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section">
+          <h3 data-i18n="audio_settings">Audio Settings</h3>
+          <div class="setting-row">
+            <label class="setting-label">
+              <input type="checkbox" id="soundEnabled" checked />
+              <span data-i18n="enable_sound">Enable Sound Effects</span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <label class="setting-label" data-i18n="volume">Volume</label>
+            <input type="range" id="volumeControl" min="0" max="100" value="70" class="volume-slider" />
+            <span id="volumeDisplay">70%</span>
+          </div>
+        </div>
+        
+        <div class="settings-section">
+          <h3 data-i18n="display_settings">Display Settings</h3>
+          <div class="setting-row">
+            <label class="setting-label">
+              <input type="checkbox" id="animationsEnabled" checked />
+              <span data-i18n="enable_animations">Enable Animations</span>
+            </label>
+          </div>
+          <div class="setting-row">
+            <label class="setting-label">
+              <input type="checkbox" id="notificationsEnabled" />
+              <span data-i18n="enable_notifications">Browser Notifications</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  <!-- 1) Socket.IO (CDN) -->
+  <!-- NOTIFICATIONS -->
+  
+  <!-- Toast notifications -->
+  <div id="toast" class="toast" role="alert" aria-live="polite"></div>
+  
+  <!-- Center notices -->
+  <div id="centerNotice" class="center-notice" role="alert" aria-live="assertive"></div>
+  
+  <!-- Progress indicator -->
+  <div id="progressBar" class="progress-bar hidden">
+    <div class="progress-fill"></div>
+  </div>
+
+  <!-- SCRIPTS -->
+  
+  <!-- Performance mark -->
+  <script>
+    if ('performance' in window && performance.mark) {
+      performance.mark('html-loaded');
+    }
+  </script>
+  
+  <!-- Critical JavaScript inlined -->
+  <script>
+    // Immediate UI improvements
+    (function() {
+      // Hide loading screen once DOM is interactive
+      if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        hideLoading();
+      } else {
+        document.addEventListener('DOMContentLoaded', hideLoading);
+      }
+      
+      function hideLoading() {
+        setTimeout(() => {
+          const loading = document.getElementById('loadingScreen');
+          const container = document.getElementById('gameContainer');
+          if (loading) loading.style.display = 'none';
+          if (container) container.style.display = 'block';
+        }, 100);
+      }
+      
+      // Set up theme based on system preference
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+      function updateTheme(e) {
+        document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+      }
+      updateTheme(prefersDark);
+      prefersDark.addListener(updateTheme);
+      
+      // Service Worker registration
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(registration => console.log('SW registered'))
+            .catch(error => console.log('SW registration failed'));
+        });
+      }
+    })();
+  </script>
+
+  <!-- External Scripts -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
-  <!-- 2) Fuerza backend de Railway -->
+  
+  <!-- App Scripts -->
   <script defer src="/socket-override.js"></script>
-  <!-- 3) Lógica del cliente -->
   <script defer src="/client.js"></script>
+  
+  <!-- Schema.org structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Game",
+    "name": "Survival Game",
+    "description": "Strategic multiplayer card game for 2-10 players",
+    "gameLocation": "Online",
+    "numberOfPlayers": "2-10",
+    "url": window.location.href
+  }
+  </script>
 </body>
 </html>
