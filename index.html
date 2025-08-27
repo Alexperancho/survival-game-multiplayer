@@ -9,6 +9,50 @@
   <link rel="icon" href="/icons/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <link rel="stylesheet" href="/styles.css" />
+  
+  <!-- Fix para ocultar modales no deseados -->
+  <style>
+    /* Asegurar que los modales estén completamente ocultos por defecto */
+    .modal.hidden {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+    }
+
+    /* Asegurar que las notificaciones estén ocultas */
+    .center-notice.hidden,
+    .toast.hidden {
+      display: none !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+    }
+
+    /* Ocultar botones de cierre de elementos ocultos */
+    .hidden .close {
+      display: none !important;
+    }
+
+    /* Asegurar que todos los elementos con clase hidden estén ocultos */
+    .hidden {
+      display: none !important;
+    }
+
+    /* Ocultar específicamente los modales por defecto */
+    #introModal,
+    #roundModal,
+    #centerNotice,
+    #toast {
+      display: none !important;
+    }
+
+    /* Solo mostrar cuando tengan clase 'show' */
+    #introModal.show,
+    #roundModal.show,
+    #centerNotice.show,
+    #toast.show {
+      display: block !important;
+    }
+  </style>
 </head>
 <body>
   <div class="wrap">
@@ -126,8 +170,6 @@
     </section>
   </div>
 
-  <!-- (ELIMINADO el footer/overview que te molestaba) -->
-
   <!-- Intro / Instructions Modal -->
   <div id="introModal" class="modal hidden">
     <div class="modal-content">
@@ -147,6 +189,55 @@
   <!-- Avisos -->
   <div id="centerNotice" class="center-notice hidden"></div>
   <div id="toast" class="toast hidden"></div>
+
+  <!-- Script para inicializar correctamente los modales -->
+  <script>
+    // Ejecutar inmediatamente para evitar que aparezcan los modales
+    document.addEventListener('DOMContentLoaded', function() {
+      // Asegurar que todos los modales estén ocultos al cargar la página
+      const modals = document.querySelectorAll('.modal');
+      modals.forEach(modal => {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+      });
+      
+      // Asegurar que las notificaciones estén ocultas
+      const notices = document.querySelectorAll('.center-notice, .toast');
+      notices.forEach(notice => {
+        notice.classList.add('hidden');
+        notice.style.display = 'none';
+      });
+      
+      // Ocultar específicamente los elementos problemáticos
+      const elementsToHide = ['introModal', 'roundModal', 'centerNotice', 'toast'];
+      elementsToHide.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+          element.classList.add('hidden');
+          element.style.display = 'none';
+        }
+      });
+    });
+
+    // Funciones para mostrar/ocultar modales correctamente
+    window.showModal = function(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('show');
+        modal.style.display = 'block';
+      }
+    };
+
+    window.hideModal = function(modalId) {
+      const modal = document.getElementById(modalId);
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('show');
+        modal.style.display = 'none';
+      }
+    };
+  </script>
 
   <!-- 1) Socket.IO (CDN) -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
