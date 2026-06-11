@@ -1,13 +1,13 @@
 {
-  "name": "Survival Game — Online",
+  "name": "Survival Game - Online",
   "short_name": "SG",
   "id": "/",
   "start_url": "/?utm_source=app",
   "scope": "/",
   "display": "fullscreen",
-  "background_color": "#000000",
-  "theme_color": "#000000",
-  "description": "Create or join a room and play Survival Game with your friends online.",
+  "background_color": "#11170f",
+  "theme_color": "#11170f",
+  "description": "Create a private room and play Survival Game online with friends.",
   "icons": [
     {
       "src": "/icons/icon-192.png",

@@ -1,19 +1,16 @@
-// service-worker.js — Survival Game (versión ligera, sin cachear websockets)
-const VERSION = 'sg-sw-v3'; // sube este número si cambias el SW
+// service-worker.js — Survival Game (network-first, no websocket interception)
+const VERSION = 'sg-sw-v4';
 const PRECACHE = [
-  '/',                     // index
+  '/',
   '/index.html',
   '/styles.css',
   '/client.js',
-  '/config.js',
-  '/socket-override.js',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/offline.html'
 ];
 
-// RUTA: nunca interceptes websockets ni la librería de socket.io (se sirven mejor fuera del SW)
 const isSocketRelated = (url) =>
   url.includes('/socket.io/') ||
   url.startsWith('ws:') || url.startsWith('wss:') ||
@@ -40,11 +37,9 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
 
   if (req.method !== 'GET' || isSocketRelated(url.href)) {
-    // Deja pasar peticiones no-GET y todo lo de socket.io/websocket.
     return;
   }
 
-  // Para navegaciones (documentos), intenta red → fallback cache → offline
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req)
@@ -61,7 +56,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Para assets estáticos: network-first → cache
   event.respondWith(
     fetch(req)
       .then((res) => {

@@ -1,1468 +1,712 @@
-/* =========================
-   Survival Game – client.js (optimizado y mejorado)
-   ========================= */
+const $ = sel => document.querySelector(sel);
+const show = (id, yes=true)=> document.getElementById(id).classList[yes?'remove':'add']('hidden');
+const toast = (msg)=>{ const t=document.getElementById('toast'); t.textContent=msg; show('toast',true); setTimeout(()=>show('toast',false), 1800); };
+const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const backendUrl = window.SG_CONFIG?.backendUrl || '';
+const backendTransport = window.SG_CONFIG?.backendTransport || '';
 
-/* --- Guard rail CSS: cualquier #toast empieza invisible --- */
-(() => {
-  try {
-    const style = document.createElement('style');
-    style.textContent = `
-      #toast{display:none !important; opacity:0 !important; pointer-events:none !important;}
-      .screen-transition { transition: opacity 0.3s ease-in-out; }
-      .pill { 
-        display: inline-block; 
-        padding: 4px 8px; 
-        margin: 2px; 
-        background: #f0f0f0; 
-        border-radius: 12px; 
-        font-size: 14px; 
-      }
-      .loading-spinner {
-        display: inline-block;
-        width: 16px;
-        height: 16px;
-        border: 2px solid #ccc;
-        border-radius: 50%;
-        border-top-color: #333;
-        animation: spin 1s linear infinite;
-      }
-      @keyframes spin { to { transform: rotate(360deg); } }
-      .error-msg { color: #e74c3c; background: #fdf2f2; padding: 8px; border-radius: 4px; }
-      .success-msg { color: #27ae60; background: #f2fdf5; padding: 8px; border-radius: 4px; }
-    `;
-    document.head.appendChild(style);
-  } catch (e) {
-    console.warn('[SG] Could not inject CSS:', e);
-  }
-})();
+let socket; let ROOM=''; let ME={ id:null, name:null, token:null, host:false };
+let MY_HAND=[];
+let CURRENT_ROUND = null;
+let ORDER_CACHE = []; // for Round 1 labels
+let PLAYERS_CACHE = []; // for overview chips
 
-/* --- Utilidades DOM mejoradas --- */
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-
-const show = (el, visible = true) => {
-  if (!el) return;
-  if (el.classList) {
-    el.classList.toggle('hidden', !visible);
-  } else {
-    el.style.display = visible ? "" : "none";
-  }
-};
-
-const fadeIn = (el, duration = 300) => {
-  if (!el) return;
-  el.style.opacity = '0';
-  el.style.display = 'block';
-  el.offsetHeight; // force reflow
-  el.style.transition = `opacity ${duration}ms ease-in-out`;
-  el.style.opacity = '1';
-};
-
-const fadeOut = (el, duration = 300) => {
-  if (!el) return;
-  el.style.transition = `opacity ${duration}ms ease-in-out`;
-  el.style.opacity = '0';
-  setTimeout(() => {
-    el.style.display = 'none';
-  }, duration);
-};
-
-// Debounce para evitar múltiples llamadas rápidas
-const debounce = (func, wait) => {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-};
-
-/* --- Sistema de i18n mejorado --- */
+// i18n
 const I18N = {
   en: {
-    your_turn: "Your turn",
-    waiting_for: (name) => `Waiting for ${name}…`,
-    creating: "Creating room…",
-    created: "Room created successfully",
-    join_fail: "Failed to join room",
-    create_fail: "Failed to create room",
-    settings_applied: "Settings applied",
-    host_only: "Host only action",
-    on_fire: "You're on fire!",
-    connecting: "Connecting…",
-    connected: "Connected",
-    disconnected: "Connection lost",
-    reconnecting: "Reconnecting…",
-    invalid_room_code: "Invalid room code format",
-    room_full: "Room is full",
-    game_started: "Game has started",
-    player_joined: (name) => `${name} joined`,
-    player_left: (name) => `${name} left`,
-    error_occurred: "An error occurred",
-    try_again: "Try again",
-    loading: "Loading…"
+    welcome_title: "Survival Game",
+    your_name: "Your name",
+    room_name_opt: "Room name (optional)",
+    room_code_join: "Room code (to join)",
+    create_room: "Create room",
+    join_room: "Join room",
+    intro_button: "Instructions",
+    join_hint: "Create a room or enter a code.",
+    lobby: "Lobby",
+    num_players: "Number of players (2–10)",
+    starting_lives: "Starting lives",
+    apply_settings: "Apply settings",
+    start_now: "Start now (manual)",
+    share_hint: "Share this page + room code with your friends.",
+    play: "Play",
+    your_hand: "Your hand",
+    summary: "Summary",
+    player: "Player",
+    wins: "Wins",
+    ask_delta: "Ask \u0394",
+    lives: "Lives",
+    bid: "Bid",
+    hand_log: "Hand log",
+    round_summary: "Round summary",
+    next_round: "Next round",
+    instructions: "Instructions",
+    opponents_cards: "Opponents' cards",
+    your_opponent_card: "Your opponent's card",
+    current_total: "Current total",
+    confirm_bid: "Confirm bid",
+    pick_card: "Pick a card to play",
+    waiting: "Waiting for other players",
+    first_speaker: "First speaker",
+    round: "Round",
+    current: "Current",
+    total_so_far: "Total so far",
+    yes: "Yes",
+    no: "No",
+    copy: "Copy",
+    copied: "Copied!",
+    connected: "Online",
+    disconnected: "Offline",
+    hand_label: "Hand",
+    starter_label: "Starter",
+    turn_label: "Turn",
+    you: "You",
+    opponent: "Opponent",
+    status: "Status",
+    out: "Out",
+    wins_game: (name)=> `${name} wins the game!`,
+    game_over: "Game over",
+    // Round help snippets
+    help_title: (r)=> `Round ${r}`,
+    help_common: `Highest card wins the hand. Suits don't matter. Aces are the lowest. In a tie of the highest rank, the first card played wins.`,
+    help_round2: `Speak your Win Asks **before** you see your two cards.`,
+    help_round1: `You see everyone else's single card, but not your own. Answer Yes/No to "Do you think you will win?"`,
+    // Intro content placeholders will be injected as HTML
   },
   es: {
-    your_turn: "¡Tu turno!",
-    waiting_for: (name) => `Esperando a ${name}…`,
-    creating: "Creando sala…",
-    created: "Sala creada exitosamente",
-    join_fail: "No se pudo unir a la sala",
-    create_fail: "No se pudo crear la sala",
-    settings_applied: "Configuración aplicada",
-    host_only: "Acción solo para anfitrión",
-    on_fire: "¡Estás on fire!",
-    connecting: "Conectando…",
-    connected: "Conectado",
-    disconnected: "Conexión perdida",
-    reconnecting: "Reconectando…",
-    invalid_room_code: "Formato de código inválido",
-    room_full: "La sala está llena",
-    game_started: "El juego ha comenzado",
-    player_joined: (name) => `${name} se unió`,
-    player_left: (name) => `${name} se fue`,
-    error_occurred: "Ocurrió un error",
-    try_again: "Intentar de nuevo",
-    loading: "Cargando…"
+    welcome_title: "Survival Game",
+    your_name: "Tu nombre",
+    room_name_opt: "Nombre de la sala (opcional)",
+    room_code_join: "Código de sala (para unirse)",
+    create_room: "Crear sala",
+    join_room: "Unirse a sala",
+    intro_button: "Instrucciones",
+    join_hint: "Crea una sala o introduce un código.",
+    lobby: "Sala de espera",
+    num_players: "Número de jugadores (2–10)",
+    starting_lives: "Vidas iniciales",
+    apply_settings: "Aplicar ajustes",
+    start_now: "Empezar ahora (manual)",
+    share_hint: "Comparte esta página + el código con tus amigos.",
+    play: "Jugar",
+    your_hand: "Tu mano",
+    summary: "Resumen",
+    player: "Jugador",
+    wins: "Manos Ganadas",
+    ask_delta: "Apuesta \u0394",
+    lives: "Vidas",
+    bid: "Apuesta",
+    hand_log: "Registro de manos",
+    round_summary: "Resumen de la ronda",
+    next_round: "Siguiente ronda",
+    instructions: "Instrucciones",
+    opponents_cards: "Cartas de los oponentes",
+    your_opponent_card: "La carta de tu oponente",
+    current_total: "Total actual",
+    confirm_bid: "Confirmar apuesta",
+    pick_card: "Elige una carta para jugar",
+    waiting: "Esperando a los demás",
+    first_speaker: "Primer hablante",
+    round: "Ronda",
+    current: "Turno",
+    total_so_far: "Suma parcial",
+    yes: "Sí",
+    no: "No",
+    copy: "Copiar",
+    copied: "¡Copiado!",
+    connected: "Online",
+    disconnected: "Offline",
+    hand_label: "Mano",
+    starter_label: "Sale",
+    turn_label: "Turno",
+    you: "Tú",
+    opponent: "Rival",
+    status: "Estado",
+    out: "Eliminado",
+    wins_game: (name)=> `¡${name} gana la partida!`,
+    game_over: "Fin de la partida",
+    help_title: (r)=> `Ronda ${r}`,
+    help_common: `La carta más alta gana la baza. Los palos no importan. Los ases son los más bajos. En empate del valor más alto, gana quien la jugó primero.`,
+    help_round2: `En la Ronda 2 se declara la apuesta de manos **antes** de ver tus dos cartas.`,
+    help_round1: `Ves la carta de los demás pero no la tuya. Responde Sí/No a “¿Crees que vas a ganar?”.`,
   }
 };
 
-// Gestión de idioma mejorada
-class LanguageManager {
-  constructor() {
-    this.lang = this.getSavedLanguage();
-    this.init();
-  }
+let LANG = (localStorage.getItem('sg_lang') || (navigator.language||'en').slice(0,2)).toLowerCase().startsWith('es') ? 'es' : 'en';
+$('#langSelect').value = LANG;
 
-  getSavedLanguage() {
-    try {
-      return localStorage.getItem("sg_lang") || navigator.language?.split('-')[0] || "en";
-    } catch {
-      return "en";
-    }
-  }
+// Easy t()
+function t(key){
+  const bundle = I18N[LANG] || I18N.en;
+  return bundle[key] ?? key;
+}
 
-  init() {
-    const langSelect = $("#langSelect");
-    if (langSelect) {
-      langSelect.value = this.lang;
-      langSelect.addEventListener("change", (e) => {
-        this.setLanguage(e.target.value);
-      });
-    }
-  }
+function applyI18n(){
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const key = el.getAttribute('data-i18n');
+    const val = t(key);
+    if(typeof val === 'string') el.textContent = val;
+  });
+  // Buttons that aren't data-i18n (header)
+  $('#btnIntro').textContent = t('instructions');
+  $('#btnOpenIntro').textContent = t('instructions');
+  $('#copyCode').textContent = t('copy');
+  $('#connState').textContent = socket?.connected ? t('connected') : t('disconnected');
+  // Update placeholders
+  $('#roomCode').placeholder = (LANG==='es'?'p.ej. ZETA42':'e.g. ZETA42');
+  $('#roomNameInput').placeholder = (LANG==='es'?'Viernes por la noche':'Friday Night');
+  $('#playerName').placeholder = (LANG==='es'?'Alicia':'Alice');
+}
+applyI18n();
 
-  setLanguage(lang) {
-    this.lang = lang;
-    try {
-      localStorage.setItem("sg_lang", lang);
-    } catch (e) {
-      console.warn('[SG] Could not save language:', e);
-    }
-    // Trigger re-render of UI text if needed
-    this.updateUITexts();
-  }
+$('#langSelect').addEventListener('change', ()=>{
+  LANG = $('#langSelect').value;
+  localStorage.setItem('sg_lang', LANG);
+  applyI18n();
+  // refresh instruction button text
+});
 
-  t(key, ...args) {
-    const translations = I18N[this.lang] || I18N.en;
-    const value = translations[key];
-    return typeof value === 'function' ? value(...args) : value || key;
+// Intro / Instructions content
+function introHTML(){
+  if(LANG==='es'){
+    return `
+    <h2>Resumen general</h2>
+    <p>Survival Game se juega con una baraja de 52 cartas. De 2 a 10 jugadores. Cada uno empieza con un número de vidas. El objetivo es conservarlas: el último jugador con vidas gana.</p>
+    <ul>
+      <li>Orden de valores: A (más bajo), 2, 3, …, 10, J, Q, K (más alto). Los palos no importan.</li>
+      <li>Las rondas van de 5 a 1 cartas por jugador. Al terminar la Ronda 1, vuelve a la Ronda 5.</li>
+      <li>En las rondas 5–2 cada jugador dice cuántas manos cree que ganará (“Apuesta”).</li>
+      <li>Penalización: vidas perdidas = |Apuesta − Manos ganadas|.</li>
+    </ul>
+    <h3>Ronda 5, 4 y 3</h3>
+    <p>Se repite el patrón: se reparten cartas (5/4/3). Se determina al primer hablante. Cada baza:</p>
+    <ol>
+      <li>Juega una carta el que empieza, luego en sentido horario.</li>
+      <li>Gana la carta de mayor valor; en empate gana la que se jugó antes.</li>
+    </ol>
+    <p><em>Ejemplo:</em> Si se juegan K, 10, Q, gana K. Si hay dos Q como valor más alto, gana la que se puso primero.</p>
+    <h3>Ronda 2 (apuesta a ciegas)</h3>
+    <p>Todos declaran su apuesta <strong>antes</strong> de ver sus 2 cartas. Después se revelan sus propias cartas y se juega igual.</p>
+    <h3>Ronda 1 (Sí/No)</h3>
+    <p>Cada jugador ve las cartas de los demás, pero no la propia. Responde “Sí” si crees que tu carta ganará, “No” si no. Tras responder todos, se revelan todas y se aplica:</p>
+    <ul><li>Si aciertas, no pierdes vidas.</li><li>Si fallas, pierdes 1 vida.</li></ul>
+    <h3>Cierre</h3>
+    <p>El ganador de una baza comienza la siguiente. Tras cada ronda se ajustan vidas y se elimina a quien llegue a 0. ¡Suerte!</p>
+    `;
   }
+  return `
+    <h2>Overall summary</h2>
+    <p>Survival Game uses a standard 52-card deck. 2–10 players. Everyone starts with some lives. Goal: keep your lives — last player standing wins.</p>
+    <ul>
+      <li>Rank order: A (lowest), 2, 3, …, 10, J, Q, K (highest). Suits don’t matter.</li>
+      <li>Rounds go 5 down to 1 cards per player. After Round 1, loop back to Round 5.</li>
+      <li>In Rounds 5–2 each player bids how many hands they expect to win (“Win Asks”).</li>
+      <li>Penalty: lives lost = |Bid − Hands won|.</li>
+    </ul>
+    <h3>Rounds 5, 4, and 3</h3>
+    <p>Same pattern: deal cards (5/4/3). Pick first speaker. For each trick:</p>
+    <ol>
+      <li>Starter plays a card, then clockwise.</li>
+      <li>Highest rank wins; if tied at highest, the earliest played wins.</li>
+    </ol>
+    <p><em>Example:</em> If K, 10, Q are played, K wins. If two Q’s are the top rank, the first Q wins.</p>
+    <h3>Round 2 (blind bidding)</h3>
+    <p>Everyone bids <strong>before</strong> seeing their 2 cards. Then their own cards are revealed and play proceeds.</p>
+    <h3>Round 1 (Yes/No)</h3>
+    <p>You see everyone else’s single card but not your own. Say “Yes” if you think you will win, “No” otherwise. After all answer, reveal all cards and apply:</p>
+    <ul><li>If correct, lose 0 lives.</li><li>If wrong, lose 1 life.</li></ul>
+    <h3>Closing</h3>
+    <p>Trick winner starts the next trick. After each round, lives are adjusted and anyone at 0 is eliminated. Good luck!</p>
+  `;
+}
 
-  updateUITexts() {
-    // Update dynamic texts in the UI
-    const elements = $$('[data-i18n]');
-    elements.forEach(el => {
-      const key = el.getAttribute('data-i18n');
-      el.textContent = this.t(key);
-    });
+function roundHelpHTML(round){
+  const hc = t('help_common');
+  if(LANG==='es'){
+    if(round===2) return `<h2>${t('help_title')(round)}</h2><p>${hc}</p><p>${I18N.es.help_round2}</p>`;
+    if(round===1) return `<h2>${t('help_title')(round)}</h2><p>${hc}</p><p>${I18N.es.help_round1}</p>`;
+    return `<h2>${t('help_title')(round)}</h2><p>${hc}</p>`;
+  } else {
+    if(round===2) return `<h2>${t('help_title')(round)}</h2><p>${hc}</p><p>${I18N.en.help_round2}</p>`;
+    if(round===1) return `<h2>${t('help_title')(round)}</h2><p>${hc}</p><p>${I18N.en.help_round1}</p>`;
+    return `<h2>${t('help_title')(round)}</h2><p>${hc}</p>`;
   }
 }
 
-const lang = new LanguageManager();
+// Card rendering (display '10' for T)
+const SUITS = { S:'\u2660', H:'\u2665', D:'\u2666', C:'\u2663' };
+function displayRank(r){ return r==='T' ? '10' : r; }
+function cardNode(code, click){
+  const n=document.createElement('div');
+  n.className='card ' + ((code[1]==='H'||code[1]==='D')?'red':'');
+  n.innerHTML = `<div class="rank">${displayRank(code[0])}</div><div class="suit">${SUITS[code[1]]}</div>`;
+  if(click){
+    n.setAttribute('role', 'button');
+    n.setAttribute('tabindex', '0');
+    n.setAttribute('aria-label', `${displayRank(code[0])}${SUITS[code[1]]}`);
+    n.addEventListener('click', click);
+    n.addEventListener('keydown', ev=>{
+      if(ev.key === 'Enter' || ev.key === ' '){
+        ev.preventDefault();
+        click(ev);
+      }
+    });
+  }
+  return n;
+}
 
-/* --- Sistema de toast mejorado --- */
-class ToastManager {
-  constructor() {
-    this.toastEl = null;
+function setConnectionState(online){
+  const el = $('#connState');
+  if(!el) return;
+  el.textContent = online ? t('connected') : t('disconnected');
+  el.classList.toggle('online', online);
+  el.classList.toggle('offline', !online);
+}
+
+class NativeRealtimeSocket {
+  constructor(url){
+    this.url = url;
+    this.id = null;
+    this.connected = false;
+    this.handlers = new Map();
+    this.onceHandlers = new Map();
     this.queue = [];
-    this.currentTimeout = null;
-    this.init();
+    this.ws = null;
+    this.open();
   }
 
-  init() {
-    this.killStaleToast();
-    document.addEventListener("DOMContentLoaded", () => this.killStaleToast());
+  on(event, handler){
+    const handlers = this.handlers.get(event) || [];
+    handlers.push(handler);
+    this.handlers.set(event, handlers);
   }
 
-  killStaleToast() {
-    const el = document.getElementById("toast");
-    if (el) {
-      el.textContent = "";
-      el.style.display = "none";
-      el.style.opacity = "0";
-      el.style.pointerEvents = "none";
+  once(event, handler){
+    const handlers = this.onceHandlers.get(event) || [];
+    handlers.push(handler);
+    this.onceHandlers.set(event, handlers);
+  }
+
+  emit(event, payload = {}){
+    const frame = JSON.stringify({ event, payload });
+    if(this.connected && this.ws?.readyState === WebSocket.OPEN){
+      this.ws.send(frame);
+    } else {
+      this.queue.push(frame);
     }
   }
 
-  createToastElement() {
-    if (!this.toastEl) {
-      this.toastEl = document.getElementById("toast") || document.createElement("div");
-      this.toastEl.id = "toast";
-      
-      Object.assign(this.toastEl.style, {
-        position: "fixed",
-        left: "50%",
-        bottom: "24px",
-        transform: "translateX(-50%)",
-        background: "#333",
-        color: "#fff",
-        padding: "12px 16px",
-        borderRadius: "8px",
-        zIndex: 9999,
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        opacity: "0",
-        pointerEvents: "none",
-        transition: "opacity 0.3s ease-in-out",
-        display: "none",
-        maxWidth: "90vw",
-        textAlign: "center",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
-        fontSize: "14px",
-        fontWeight: "500"
-      });
-      
-      if (!this.toastEl.parentNode) {
-        document.body.appendChild(this.toastEl);
+  open(){
+    try {
+      this.ws = new WebSocket(this.url);
+    } catch (err) {
+      setTimeout(()=> this.dispatch('connect_error', err), 0);
+      return;
+    }
+
+    this.ws.addEventListener('message', ev=>{
+      let frame;
+      try {
+        frame = JSON.parse(ev.data);
+      } catch {
+        return;
       }
-    }
-    return this.toastEl;
-  }
-
-  show(message, duration = 2000, type = 'default') {
-    if (!message) return;
-    
-    // Clear current timeout
-    if (this.currentTimeout) {
-      clearTimeout(this.currentTimeout);
-    }
-
-    const toast = this.createToastElement();
-    
-    // Set message and styling based on type
-    toast.textContent = message;
-    const colors = {
-      default: { bg: '#333', color: '#fff' },
-      success: { bg: '#27ae60', color: '#fff' },
-      error: { bg: '#e74c3c', color: '#fff' },
-      warning: { bg: '#f39c12', color: '#fff' }
-    };
-    
-    const style = colors[type] || colors.default;
-    toast.style.background = style.bg;
-    toast.style.color = style.color;
-    
-    // Show toast
-    toast.style.display = "block";
-    requestAnimationFrame(() => {
-      toast.style.opacity = "1";
+      const event = frame.event;
+      const payload = frame.payload ?? {};
+      if(event === 'connect'){
+        this.id = payload.id || this.id;
+        this.connected = true;
+        this.flush();
+      }
+      this.dispatch(event, payload);
     });
-    
-    // Hide after duration
-    this.currentTimeout = setTimeout(() => {
-      toast.style.opacity = "0";
-      setTimeout(() => {
-        toast.style.display = "none";
-      }, 300);
-    }, duration);
+
+    this.ws.addEventListener('close', ()=>{
+      this.connected = false;
+      this.dispatch('disconnect');
+    });
+
+    this.ws.addEventListener('error', ev=>{
+      this.dispatch('connect_error', ev);
+    });
   }
 
-  error(message, duration = 3000) {
-    this.show(message, duration, 'error');
+  flush(){
+    while(this.queue.length && this.ws?.readyState === WebSocket.OPEN){
+      this.ws.send(this.queue.shift());
+    }
   }
 
-  success(message, duration = 2000) {
-    this.show(message, duration, 'success');
-  }
-
-  warning(message, duration = 2500) {
-    this.show(message, duration, 'warning');
+  dispatch(event, payload){
+    (this.handlers.get(event) || []).forEach(handler => handler(payload));
+    const once = this.onceHandlers.get(event) || [];
+    if(once.length){
+      this.onceHandlers.delete(event);
+      once.forEach(handler => handler(payload));
+    }
   }
 }
 
-const toast = new ToastManager();
-
-/* --- Sistema de navegación mejorado --- */
-const VIEW_IDS = ["view-join", "view-lobby", "view-preround", "view-bids", "view-play", "view-summary"];
-
-class ViewManager {
-  constructor() {
-    this.currentView = null;
-    this.history = [];
-    this.maxHistoryLength = 10;
-  }
-
-  goto(viewId, addToHistory = true) {
-    const views = VIEW_IDS.map(id => document.getElementById(id)).filter(Boolean);
-    
-    if (views.length) {
-      views.forEach(view => {
-        if (view.id === viewId) {
-          fadeIn(view);
-        } else {
-          show(view, false);
-        }
-      });
-    } else {
-      // Fallback para .screen
-      const screens = $$(".screen");
-      if (screens.length) {
-        const targetId = viewId.replace("view-", "");
-        screens.forEach(screen => {
-          if (screen.id === targetId) {
-            fadeIn(screen);
-          } else {
-            show(screen, false);
-          }
-        });
-      }
-    }
-
-    // Gestión de historial
-    if (addToHistory && this.currentView && this.currentView !== viewId) {
-      this.history.push(this.currentView);
-      if (this.history.length > this.maxHistoryLength) {
-        this.history.shift();
-      }
-    }
-
-    this.currentView = viewId;
-    console.log(`[SG] Navigated to: ${viewId}`);
-  }
-
-  back() {
-    if (this.history.length > 0) {
-      const previousView = this.history.pop();
-      this.goto(previousView, false);
-      return true;
-    }
+function shouldUseNativeWebSocket(url){
+  const transport = String(backendTransport || window.SG_BACKEND_TRANSPORT || '').toLowerCase();
+  if(transport === 'websocket' || transport === 'ws') return true;
+  if(transport === 'socketio') return false;
+  if(!url) return false;
+  try {
+    const parsed = new URL(url, window.location.href);
+    return parsed.protocol === 'ws:' ||
+      parsed.protocol === 'wss:' ||
+      parsed.pathname === '/ws' ||
+      parsed.hostname === 'api.survival.fun' ||
+      parsed.hostname.endsWith('.workers.dev');
+  } catch {
     return false;
   }
-
-  getCurrentView() {
-    return this.currentView;
-  }
 }
 
-const viewManager = new ViewManager();
-
-/* --- Router mejorado con validación --- */
-class Router {
-  constructor() {
-    this.init();
-  }
-
-  init() {
-    window.addEventListener("hashchange", () => this.applyRouteFromHash());
-    // Initial route application
-    setTimeout(() => this.applyRouteFromHash(), 0);
-  }
-
-  getCurrentHashCode() {
-    return (location.hash || "").replace("#", "").trim().toUpperCase();
-  }
-
-  isValidRoomCode(code) {
-    return /^[A-Z0-9]{4,10}$/.test(code || "");
-  }
-
-  applyRouteFromHash() {
-    const code = this.getCurrentHashCode();
-    
-    if (this.isValidRoomCode(code)) {
-      gameState.setRoomCode(code);
-      if ($("#roomCodeBadge")) {
-        $("#roomCodeBadge").textContent = code;
-      }
-      viewManager.goto("view-lobby");
-    } else {
-      viewManager.goto("view-join");
-    }
-  }
-
-  setHash(code) {
-    try {
-      if (this.isValidRoomCode(code)) {
-        location.hash = "#" + code;
-      }
-    } catch (e) {
-      console.warn('[SG] Could not set hash:', e);
-    }
-  }
+function toWebSocketUrl(url){
+  const parsed = new URL(url, window.location.href);
+  if(parsed.protocol === 'http:') parsed.protocol = 'ws:';
+  if(parsed.protocol === 'https:') parsed.protocol = 'wss:';
+  if(!parsed.pathname || parsed.pathname === '/') parsed.pathname = '/ws';
+  return parsed.toString();
 }
 
-const router = new Router();
-
-/* --- Gestión de estado mejorada --- */
-class GameState {
-  constructor() {
-    this.me = { id: null, name: null, host: false };
-    this.room = { code: "", name: "", seats: 4, startLives: 7 };
-    this.players = [];
-    this.onFire = new Set();
-    this.connectionState = 'disconnected';
-    this.gamePhase = 'lobby';
+// Connect
+function connect(){
+  if(socket) return;
+  if(shouldUseNativeWebSocket(backendUrl)){
+    socket = new NativeRealtimeSocket(toWebSocketUrl(backendUrl));
+  } else if(!window.io){
+    toast(LANG==='es'?'No se pudo cargar la conexión online.':'Online connection failed to load.');
+    return;
+  } else {
+    socket = backendUrl
+      ? io(backendUrl, { transports: ['websocket', 'polling'] })
+      : io({ transports: ['websocket', 'polling'] });
   }
-
-  setPlayer(data) {
-    Object.assign(this.me, data);
-  }
-
-  setRoom(data) {
-    Object.assign(this.room, data);
-  }
-
-  setRoomCode(code) {
-    this.room.code = code;
-  }
-
-  setPlayers(players) {
-    this.players = Array.isArray(players) ? players : [];
-  }
-
-  addPlayerOnFire(playerId) {
-    this.onFire.add(playerId);
-  }
-
-  removePlayerOnFire(playerId) {
-    this.onFire.delete(playerId);
-  }
-
-  isPlayerOnFire(playerId) {
-    return this.onFire.has(playerId);
-  }
-
-  setConnectionState(state) {
-    this.connectionState = state;
-    this.updateConnectionUI();
-  }
-
-  updateConnectionUI() {
-    const statusEl = $("#connectionStatus");
-    if (statusEl) {
-      const states = {
-        connected: { text: lang.t('connected'), class: 'success-msg' },
-        connecting: { text: lang.t('connecting'), class: 'warning-msg' },
-        disconnected: { text: lang.t('disconnected'), class: 'error-msg' },
-        reconnecting: { text: lang.t('reconnecting'), class: 'warning-msg' }
-      };
-      
-      const state = states[this.connectionState] || states.disconnected;
-      statusEl.textContent = state.text;
-      statusEl.className = state.class;
-    }
-  }
-
-  setGamePhase(phase) {
-    this.gamePhase = phase;
-    console.log(`[SG] Game phase: ${phase}`);
-  }
+  bindSocket();
 }
 
-const gameState = new GameState();
-
-/* --- Generador de códigos mejorado --- */
-class CodeGenerator {
-  constructor() {
-    this.alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // Sin caracteres confusos
-  }
-
-  generate(length = 6) {
-    let code = "";
-    for (let i = 0; i < length; i++) {
-      code += this.alphabet[Math.floor(Math.random() * this.alphabet.length)];
-    }
-    return code;
-  }
-
-  isValid(code) {
-    return /^[A-Z0-9]{4,10}$/.test(code || "");
-  }
-}
-
-const codeGen = new CodeGenerator();
-
-/* --- Conexión WebSocket mejorada --- */
-class SocketManager {
-  constructor() {
-    this.socket = null;
-    this.backend = window.SG_BACKEND || "https://survival-game-multiplayer-production.up.railway.app";
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 10;
-    this.init();
-  }
-
-  init() {
-    if (!window.io) {
-      console.error("[SG] ERROR: socket.io CDN no está cargado");
-      toast.error("Socket.io library not loaded");
-      return;
-    }
-
-    this.socket = io(this.backend, {
-      transports: ["websocket", "polling"],
-      withCredentials: false,
-      reconnection: true,
-      reconnectionAttempts: this.maxReconnectAttempts,
-      reconnectionDelay: 1000,
-      timeout: 6000
-    });
-
-    this.setupEventListeners();
-  }
-
-  setupEventListeners() {
-    this.socket.on("connect", () => {
-      console.log("[SG] ✓ Connected", { id: this.socket.id, url: this.backend });
-      gameState.setConnectionState('connected');
-      gameState.setPlayer({ id: this.socket.id });
-      this.reconnectAttempts = 0;
-    });
-
-    this.socket.on("connect_error", (error) => {
-      console.warn("[SG] Connection error:", error?.message || error);
-      gameState.setConnectionState('disconnected');
-      toast.error(lang.t('error_occurred'));
-    });
-
-    this.socket.on("disconnect", () => {
-      console.log("[SG] Disconnected");
-      gameState.setConnectionState('disconnected');
-    });
-
-    this.socket.on("reconnect", () => {
-      console.log("[SG] Reconnected");
-      gameState.setConnectionState('connected');
-      toast.success(lang.t('connected'));
-    });
-
-    this.socket.on("reconnect_attempt", (attempt) => {
-      console.log(`[SG] Reconnection attempt ${attempt}`);
-      gameState.setConnectionState('reconnecting');
-    });
-
-    this.socket.on("reconnect_error", (error) => {
-      console.warn("[SG] Reconnection error:", error);
-    });
-
-    this.socket.on("reconnect_failed", () => {
-      console.error("[SG] Reconnection failed");
-      gameState.setConnectionState('disconnected');
-      toast.error("Connection failed. Please refresh the page.");
-    });
-
-    // Game event listeners
-    this.setupGameEventListeners();
-  }
-
-  setupGameEventListeners() {
-    // Room creation events (multiple names for compatibility)
-    ["room_created", "roomCreated", "created_room"].forEach(event => {
-      this.socket.on(event, (payload) => {
-        if (!payload) return;
-        
-        gameState.setRoom({
-          code: payload.code || gameState.room.code,
-          name: payload.roomName || gameState.room.name,
-          seats: payload.seats || gameState.room.seats,
-          startLives: payload.startLives || gameState.room.startLives
-        });
-
-        if ($("#roomCodeBadge")) {
-          $("#roomCodeBadge").textContent = gameState.room.code;
-        }
-
-        if (!router.isValidRoomCode(router.getCurrentHashCode())) {
-          router.setHash(gameState.room.code);
-        }
-
-        viewManager.goto("view-lobby");
-        toast.success(lang.t('created'));
-      });
-    });
-
-    // Lobby updates
-    this.socket.on("lobby_update", (payload) => {
-      if (!payload || !Array.isArray(payload.players)) return;
-
-      gameState.setPlayers(payload.players);
-      this.updateLobbyUI(payload.players);
-
-      // Check if current player is host
-      const currentPlayer = payload.players.find(p => p.id === this.socket.id);
-      if (currentPlayer) {
-        gameState.setPlayer({ host: currentPlayer.host });
-        this.updateHostControls(currentPlayer.host);
-      }
-    });
-
-    // Game state events
-    this.socket.on("start_play", (payload) => {
-      gameState.setGamePhase('playing');
-      viewManager.goto("view-play");
-      
-      if (payload?.turnOwner) {
-        this.setTurnOwner(payload.turnOwner);
-      }
-    });
-
-    this.socket.on("turn_changed", (payload) => {
-      this.setTurnOwner(payload);
-    });
-
-    this.socket.on("round_summary", (payload) => {
-      gameState.setGamePhase('summary');
-      viewManager.goto("view-summary");
-    });
-
-    // Player events
-    this.socket.on("player_joined", (payload) => {
-      if (payload?.player?.name) {
-        toast.success(lang.t('player_joined', payload.player.name));
-      }
-    });
-
-    this.socket.on("player_left", (payload) => {
-      if (payload?.player?.name) {
-        toast.warning(lang.t('player_left', payload.player.name));
-      }
-    });
-
-    // Error handling
-    this.socket.on("error", (payload) => {
-      const message = payload?.message || payload?.error || lang.t('error_occurred');
-      toast.error(message);
-    });
-  }
-
-  updateLobbyUI(players) {
-    const list = $("#playersLobby");
-    if (!list) return;
-
-    list.innerHTML = players
-      .map(player => `
-        <span class="pill ${player.host ? 'host-pill' : ''}" 
-              data-player-id="${player.id}">
-          ${player.name}${player.host ? ' ⭐' : ''}
-        </span>
-      `)
-      .join(" ");
-  }
-
-  updateHostControls(isHost) {
-    const controls = $("#hostControls");
-    if (controls) {
-      show(controls, isHost);
-    }
-  }
-
-  setTurnOwner(turnOwner) {
-    if (!turnOwner) return;
-
-    const isMyTurn = turnOwner.id === this.socket.id || turnOwner.name === gameState.me.name;
-    
-    const turnBadge = $("#turnBadge");
-    const playHint = $("#playHint");
-    
-    if (turnBadge) show(turnBadge, isMyTurn);
-    if (playHint) {
-      playHint.textContent = isMyTurn 
-        ? lang.t('your_turn') 
-        : lang.t('waiting_for', turnOwner.name || "…");
-    }
-
-    // Add visual feedback
-    if (isMyTurn) {
-      toast.success(lang.t('your_turn'), 1000);
-    }
-  }
-
-  emit(event, data, callback) {
-    if (this.socket && this.socket.connected) {
-      if (callback) {
-        this.socket.timeout(5000).emit(event, data, callback);
-      } else {
-        this.socket.emit(event, data);
-      }
-    } else {
-      toast.error("Not connected to server");
-      if (callback) callback(new Error("Not connected"));
-    }
-  }
-}
-
-const socketManager = new SocketManager();
-
-/* --- Controladores de UI mejorados --- */
-class UIController {
-  constructor() {
-    this.init();
-  }
-
-  init() {
-    this.setupCreateRoomButton();
-    this.setupJoinRoomButton();
-    this.setupHostControls();
-    this.setupFormValidation();
-  }
-
-  setupCreateRoomButton() {
-    const btnCreate = $("#createRoomBtn") || $("#btnCreate") || $("[data-action='create']");
-    if (!btnCreate) return;
-
-    btnCreate.addEventListener("click", debounce(() => {
-      this.handleCreateRoom();
-    }, 500));
-  }
-
-  setupJoinRoomButton() {
-    const btnJoin = $("#joinRoomBtn") || $("#btnJoin") || $("[data-action='join']");
-    if (!btnJoin) return;
-
-    btnJoin.addEventListener("click", debounce(() => {
-      this.handleJoinRoom();
-    }, 500));
-  }
-
-  setupHostControls() {
-    const btnConfigure = $("#btnConfigure");
-    const btnStart = $("#btnStart");
-
-    if (btnConfigure) {
-      btnConfigure.addEventListener("click", () => {
-        this.handleConfigureRoom();
-      });
-    }
-
-    if (btnStart) {
-      btnStart.addEventListener("click", () => {
-        this.handleStartGame();
-      });
-    }
-  }
-
-  setupFormValidation() {
-    // Real-time validation for room code input
-    const roomCodeInput = $("#roomCode");
-    if (roomCodeInput) {
-      roomCodeInput.addEventListener("input", (e) => {
-        const value = e.target.value.toUpperCase();
-        e.target.value = value;
-        
-        const isValid = codeGen.isValid(value);
-        e.target.style.borderColor = value.length > 0 ? (isValid ? '#27ae60' : '#e74c3c') : '';
-      });
-    }
-
-    // Auto-focus and enter key handling
-    const playerNameInput = $("#playerName") || $("#name");
-    if (playerNameInput && !playerNameInput.value) {
-      playerNameInput.focus();
-    }
-
-    // Enter key shortcuts
-    document.addEventListener("keypress", (e) => {
-      if (e.key === "Enter") {
-        const currentView = viewManager.getCurrentView();
-        if (currentView === "view-join") {
-          const joinBtn = $("#joinRoomBtn") || $("#btnJoin");
-          if (joinBtn && !joinBtn.disabled) joinBtn.click();
-        }
-      }
-    });
-  }
-
-  handleCreateRoom() {
-    const name = this.getInputValue("#playerName", "#name") || "Player";
-    const roomName = this.getInputValue("#roomNameInput", "#roomName") || "";
-    const seats = parseInt(this.getInputValue("#seatCount") || "4", 10);
-    const startLives = parseInt(this.getInputValue("#startingLives") || "7", 10);
-
-    // Validation
-    if (seats < 2 || seats > 10) {
-      toast.error("Seats must be between 2 and 10");
-      return;
-    }
-
-    if (startLives < 1 || startLives > 20) {
-      toast.error("Starting lives must be between 1 and 20");
-      return;
-    }
-
-    gameState.setPlayer({ name, host: true });
-    const code = codeGen.generate(6);
-    gameState.setRoom({ code, name: roomName, seats, startLives });
-
-    router.setHash(code);
-    toast.show(lang.t('creating'));
-
-    socketManager.emit("create_room", 
-      { code, roomName, seats, startLives, name }, 
-      (err, res) => {
-        if (err) {
-          console.warn("[SG] create_room timeout/error:", err);
-          toast.error("Request timed out. " + lang.t('try_again'));
-          return;
-        }
-
-        if (!res || res.ok !== true) {
-          const errorMsg = res?.error || lang.t('create_fail');
-          toast.error(errorMsg);
-          location.hash = "";
-          router.applyRouteFromHash();
-          return;
-        }
-
-        // Update with server response
-        const room = res.room || {};
-        gameState.setRoom({
-          seats: room.seats || seats,
-          startLives: room.startLives || startLives
-        });
-
-        if ($("#roomCodeBadge")) {
-          $("#roomCodeBadge").textContent = gameState.room.code;
-        }
-
-        toast.success(lang.t('created'));
-      }
-    );
-  }
-
-  handleJoinRoom() {
-    const name = this.getInputValue("#playerName", "#name") || "Player";
-    const code = (this.getInputValue("#roomCode") || "").toUpperCase();
-
-    if (!codeGen.isValid(code)) {
-      toast.error(lang.t('invalid_room_code'));
-      return;
-    }
-
-    gameState.setPlayer({ name, host: false });
-    gameState.setRoomCode(code);
-
-    router.setHash(code);
-    toast.show(lang.t('connecting'));
-
-    socketManager.emit("join_room", 
-      { code, name }, 
-      (err, res) => {
-        if (err) {
-          console.warn("[SG] join_room timeout/error:", err);
-          toast.error("Request timed out. " + lang.t('try_again'));
-          return;
-        }
-
-        if (!res || res.ok !== true) {
-          const errorMsg = res?.error || lang.t('join_fail');
-          toast.error(errorMsg);
-          location.hash = "";
-          router.applyRouteFromHash();
-        }
-      }
-    );
-  }
-
-  handleConfigureRoom() {
-    if (!gameState.me.host) {
-      toast.warning(lang.t('host_only'));
-      return;
-    }
-
-    const seats = parseInt(this.getInputValue("#seatCount") || gameState.room.seats, 10);
-    const startLives = parseInt(this.getInputValue("#startingLives") || gameState.room.startLives, 10);
-
-    if (seats < 2 || seats > 10) {
-      toast.error("Seats must be between 2 and 10");
-      return;
-    }
-
-    if (startLives < 1 || startLives > 20) {
-      toast.error("Starting lives must be between 1 and 20");
-      return;
-    }
-
-    socketManager.emit("configure_room", { 
-      code: gameState.room.code, 
-      seats, 
-      startLives 
-    });
-
-    gameState.setRoom({ seats, startLives });
-    toast.success(lang.t('settings_applied'));
-  }
-
-  handleStartGame() {
-    if (!gameState.me.host) {
-      toast.warning(lang.t('host_only'));
-      return;
-    }
-
-    if (gameState.players.length < 2) {
-      toast.warning("Need at least 2 players to start");
-      return;
-    }
-
-    socketManager.emit("start_now", { code: gameState.room.code });
-    toast.show("Starting game…");
-  }
-
-  getInputValue(...selectors) {
-    for (const selector of selectors) {
-      const el = $(selector);
-      if (el && el.value !== undefined) {
-        return el.value.trim();
-      }
-    }
-    return "";
-  }
-}
-
-// Initialize UI controller
-const uiController = new UIController();
-
-/* --- Sistema de notificaciones mejorado --- */
-class NotificationManager {
-  constructor() {
-    this.permission = 'default';
-    this.init();
-  }
-
-  async init() {
-    if ('Notification' in window) {
-      this.permission = Notification.permission;
-      
-      if (this.permission === 'default') {
-        try {
-          this.permission = await Notification.requestPermission();
-        } catch (e) {
-          console.warn('[SG] Notification permission error:', e);
-        }
-      }
-    }
-  }
-
-  show(title, options = {}) {
-    if (this.permission !== 'granted' || !('Notification' in window)) {
-      return;
-    }
-
-    // Don't show notifications if tab is active
-    if (!document.hidden) {
-      return;
-    }
-
-    const defaultOptions = {
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: 'survival-game',
-      requireInteraction: false,
-      ...options
-    };
-
-    try {
-      const notification = new Notification(title, defaultOptions);
-      
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-      };
-
-      // Auto close after 5 seconds
-      setTimeout(() => notification.close(), 5000);
-      
-      return notification;
-    } catch (e) {
-      console.warn('[SG] Could not show notification:', e);
-    }
-  }
-
-  showTurnNotification(playerName) {
-    this.show(`Survival Game - ${playerName}'s Turn`, {
-      body: `It's ${playerName}'s turn to play`,
-      tag: 'turn-notification'
-    });
-  }
-
-  showGameEvent(title, message) {
-    this.show(`Survival Game - ${title}`, {
-      body: message,
-      tag: 'game-event'
-    });
-  }
-}
-
-const notifications = new NotificationManager();
-
-/* --- Sistema de audio mejorado --- */
-class AudioManager {
-  constructor() {
-    this.enabled = true;
-    this.volume = 0.7;
-    this.sounds = {};
-    this.init();
-  }
-
-  init() {
-    // Create audio elements for different sounds
-    this.createSound('turn', this.generateToneURL(800, 200)); // Turn notification
-    this.createSound('join', this.generateToneURL(600, 150)); // Player joined
-    this.createSound('leave', this.generateToneURL(400, 150)); // Player left
-    this.createSound('success', this.generateToneURL([600, 800], 300)); // Success action
-    this.createSound('error', this.generateToneURL(300, 200)); // Error
-    
-    // Load settings
-    this.loadSettings();
-    this.setupControls();
-  }
-
-  createSound(name, url) {
-    try {
-      const audio = new Audio();
-      audio.volume = this.volume;
-      audio.preload = 'auto';
-      if (url) {
-        audio.src = url;
-      }
-      this.sounds[name] = audio;
-    } catch (e) {
-      console.warn(`[SG] Could not create sound ${name}:`, e);
-    }
-  }
-
-  generateToneURL(frequency, duration) {
-    try {
-      const sampleRate = 44100;
-      const samples = sampleRate * (duration / 1000);
-      const buffer = new ArrayBuffer(samples * 2);
-      const view = new DataView(buffer);
-      
-      const frequencies = Array.isArray(frequency) ? frequency : [frequency];
-      
-      for (let i = 0; i < samples; i++) {
-        let sample = 0;
-        frequencies.forEach(freq => {
-          sample += Math.sin(2 * Math.PI * freq * i / sampleRate) / frequencies.length;
-        });
-        
-        // Apply envelope (fade in/out)
-        const fadeLength = samples * 0.1;
-        if (i < fadeLength) {
-          sample *= i / fadeLength;
-        } else if (i > samples - fadeLength) {
-          sample *= (samples - i) / fadeLength;
-        }
-        
-        const value = Math.max(-32768, Math.min(32767, sample * 32767));
-        view.setInt16(i * 2, value, true);
-      }
-      
-      const blob = new Blob([buffer], { type: 'audio/wav' });
-      return URL.createObjectURL(blob);
-    } catch (e) {
-      console.warn('[SG] Could not generate tone:', e);
-      return null;
-    }
-  }
-
-  play(soundName) {
-    if (!this.enabled || !this.sounds[soundName]) return;
-    
-    try {
-      const sound = this.sounds[soundName];
-      sound.currentTime = 0;
-      sound.volume = this.volume;
-      sound.play().catch(e => {
-        // Ignore play errors (user hasn't interacted yet)
-        console.debug(`[SG] Could not play sound ${soundName}:`, e.message);
-      });
-    } catch (e) {
-      console.warn(`[SG] Sound playback error for ${soundName}:`, e);
-    }
-  }
-
-  setEnabled(enabled) {
-    this.enabled = enabled;
-    this.saveSettings();
-  }
-
-  setVolume(volume) {
-    this.volume = Math.max(0, Math.min(1, volume));
-    Object.values(this.sounds).forEach(sound => {
-      sound.volume = this.volume;
-    });
-    this.saveSettings();
-  }
-
-  loadSettings() {
-    try {
-      const settings = localStorage.getItem('sg_audio_settings');
-      if (settings) {
-        const parsed = JSON.parse(settings);
-        this.enabled = parsed.enabled !== false;
-        this.volume = parsed.volume || 0.7;
-      }
-    } catch (e) {
-      console.warn('[SG] Could not load audio settings:', e);
-    }
-  }
-
-  saveSettings() {
-    try {
-      localStorage.setItem('sg_audio_settings', JSON.stringify({
-        enabled: this.enabled,
-        volume: this.volume
-      }));
-    } catch (e) {
-      console.warn('[SG] Could not save audio settings:', e);
-    }
-  }
-
-  setupControls() {
-    // Setup audio controls if they exist in the UI
-    const volumeSlider = $('#volumeSlider');
-    const audioToggle = $('#audioToggle');
-    
-    if (volumeSlider) {
-      volumeSlider.value = this.volume * 100;
-      volumeSlider.addEventListener('input', (e) => {
-        this.setVolume(e.target.value / 100);
-      });
-    }
-    
-    if (audioToggle) {
-      audioToggle.checked = this.enabled;
-      audioToggle.addEventListener('change', (e) => {
-        this.setEnabled(e.target.checked);
-      });
-    }
-  }
-}
-
-const audio = new AudioManager();
-
-/* --- Sistema de análticas y métricas --- */
-class AnalyticsManager {
-  constructor() {
-    this.sessionStart = Date.now();
-    this.events = [];
-    this.maxEvents = 100;
-  }
-
-  track(event, data = {}) {
-    const eventData = {
-      event,
-      timestamp: Date.now(),
-      sessionTime: Date.now() - this.sessionStart,
-      view: viewManager.getCurrentView(),
-      roomCode: gameState.room.code,
-      isHost: gameState.me.host,
-      ...data
-    };
-
-    this.events.push(eventData);
-    
-    // Keep only recent events
-    if (this.events.length > this.maxEvents) {
-      this.events.shift();
-    }
-
-    console.log('[SG Analytics]', eventData);
-  }
-
-  getMetrics() {
-    return {
-      sessionDuration: Date.now() - this.sessionStart,
-      totalEvents: this.events.length,
-      roomCode: gameState.room.code,
-      playerName: gameState.me.name,
-      isHost: gameState.me.host,
-      connectionState: gameState.connectionState,
-      currentView: viewManager.getCurrentView(),
-      gamePhase: gameState.gamePhase
-    };
-  }
-
-  exportData() {
-    return {
-      metrics: this.getMetrics(),
-      events: this.events
-    };
-  }
-}
-
-const analytics = new AnalyticsManager();
-
-/* --- Sistema de debug y desarrollo --- */
-class DebugManager {
-  constructor() {
-    this.enabled = this.isDevelopment();
-    this.commands = new Map();
-    this.init();
-  }
-
-  isDevelopment() {
-    return location.hostname === 'localhost' || 
-           location.hostname === '127.0.0.1' || 
-           location.search.includes('debug=true');
-  }
-
-  init() {
-    if (!this.enabled) return;
-
-    this.setupCommands();
-    this.setupGlobalDebugging();
-    this.setupKeyboardShortcuts();
-  }
-
-  setupCommands() {
-    this.commands.set('state', () => {
-      console.log('Game State:', gameState);
-      return gameState;
-    });
-
-    this.commands.set('metrics', () => {
-      const metrics = analytics.getMetrics();
-      console.log('Analytics:', metrics);
-      return metrics;
-    });
-
-    this.commands.set('socket', () => {
-      console.log('Socket:', socketManager.socket);
-      return socketManager.socket;
-    });
-
-    this.commands.set('toast', (message = 'Test toast', type = 'default') => {
-      toast[type] ? toast[type](message) : toast.show(message);
-    });
-
-    this.commands.set('view', (viewId) => {
-      if (viewId) {
-        viewManager.goto(viewId);
-      } else {
-        console.log('Current view:', viewManager.getCurrentView());
-        console.log('Available views:', VIEW_IDS);
-      }
-    });
-
-    this.commands.set('lang', (newLang) => {
-      if (newLang) {
-        lang.setLanguage(newLang);
-      } else {
-        console.log('Current language:', lang.lang);
-        console.log('Available languages:', Object.keys(I18N));
-      }
-    });
-
-    this.commands.set('help', () => {
-      console.log('Available debug commands:');
-      for (const [cmd, func] of this.commands) {
-        console.log(`  SG.${cmd}()`);
-      }
-    });
-  }
-
-  setupGlobalDebugging() {
-    window.SG = {};
-    for (const [name, func] of this.commands) {
-      window.SG[name] = func;
-    }
-
-    // Global references for debugging
-    window.SG.gameState = gameState;
-    window.SG.socketManager = socketManager;
-    window.SG.viewManager = viewManager;
-    window.SG.analytics = analytics;
-    window.SG.toast = toast;
-    window.SG.audio = audio;
-    
-    console.log('[SG] Debug mode enabled. Type SG.help() for commands.');
-  }
-
-  setupKeyboardShortcuts() {
-    document.addEventListener('keydown', (e) => {
-      // Ctrl+Shift+D for debug panel
-      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
-        e.preventDefault();
-        this.toggleDebugPanel();
-      }
-    });
-  }
-
-  toggleDebugPanel() {
-    let panel = $('#debugPanel');
-    
-    if (!panel) {
-      panel = document.createElement('div');
-      panel.id = 'debugPanel';
-      panel.innerHTML = `
-        <div style="position: fixed; top: 10px; right: 10px; background: rgba(0,0,0,0.9); color: white; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 12px; z-index: 10000; max-width: 300px; max-height: 80vh; overflow-y: auto;">
-          <h3>Debug Panel</h3>
-          <button onclick="this.parentNode.parentNode.remove()" style="float: right; margin-top: -30px;">×</button>
-          <div id="debugContent"></div>
-        </div>
-      `;
-      document.body.appendChild(panel);
-    }
-
-    const content = $('#debugContent');
-    if (content) {
-      const metrics = analytics.getMetrics();
-      content.innerHTML = `
-        <p><strong>View:</strong> ${viewManager.getCurrentView()}</p>
-        <p><strong>Connection:</strong> ${gameState.connectionState}</p>
-        <p><strong>Room:</strong> ${gameState.room.code}</p>
-        <p><strong>Players:</strong> ${gameState.players.length}</p>
-        <p><strong>Session:</strong> ${Math.round(metrics.sessionDuration / 1000)}s</p>
-        <p><strong>Events:</strong> ${metrics.totalEvents}</p>
-        <button onclick="SG.toast('Debug toast!', 'success')" style="margin: 5px;">Test Toast</button>
-        <button onclick="SG.audio.play('turn')" style="margin: 5px;">Test Audio</button>
-        <button onclick="console.log(SG.analytics.exportData())" style="margin: 5px;">Export Data</button>
-      `;
-    }
-  }
-}
-
-const debug = new DebugManager();
-
-/* --- Extensiones de los event listeners existentes --- */
-// Extend socket manager with audio and notification support
-const originalSetTurnOwner = socketManager.setTurnOwner;
-socketManager.setTurnOwner = function(turnOwner) {
-  originalSetTurnOwner.call(this, turnOwner);
-  
-  if (turnOwner) {
-    const isMyTurn = turnOwner.id === this.socket.id || turnOwner.name === gameState.me.name;
-    
-    analytics.track('turn_changed', { 
-      turnOwner: turnOwner.name, 
-      isMyTurn 
-    });
-
-    if (isMyTurn) {
-      audio.play('turn');
-      notifications.showTurnNotification(turnOwner.name);
-    } else {
-      notifications.showTurnNotification(turnOwner.name);
-    }
-  }
+// Create room
+$('#btnCreate').onclick = ()=>{
+  const name = ($('#playerName').value||'Player').trim();
+  const roomName = ($('#roomNameInput').value||'').trim();
+  if(!name){ toast(LANG==='es'?'Escribe tu nombre':'Enter your name'); return; }
+  connect();
+  socket.emit('create_room', { name, roomName });
 };
 
-// Extend socket event listeners with audio feedback
-socketManager.socket.on("player_joined", (payload) => {
-  if (payload?.player?.name) {
-    toast.success(lang.t('player_joined', payload.player.name));
-    audio.play('join');
-    analytics.track('player_joined', { playerName: payload.player.name });
+// Join room
+$('#btnJoin').onclick = ()=>{
+  ROOM = ($('#roomCode').value||'').trim().toUpperCase();
+  const name = ($('#playerName').value||'Player').trim();
+  if(!ROOM){ toast(LANG==='es'?'Escribe el código de sala':'Enter room code'); return; }
+  connect();
+  const token = localStorage.getItem('sg_token_'+ROOM) || null;
+  socket.emit('join_room', { roomCode: ROOM, name, token });
+};
+
+// Intro modal
+function openIntro(){ $('#introBody').innerHTML = introHTML(); show('introModal', true); }
+function closeIntro(){ show('introModal', false); }
+$('#btnIntro').onclick = openIntro;
+$('#btnOpenIntro').onclick = openIntro;
+$('#closeIntro').onclick = closeIntro;
+
+// Round help modal
+function openRoundHelp(){ const r = CURRENT_ROUND || 5; $('#roundBody').innerHTML = roundHelpHTML(r); show('roundModal', true); }
+function closeRoundHelp(){ show('roundModal', false); }
+$('#btnRoundHelp').onclick = openRoundHelp;
+$('#closeRound').onclick = closeRoundHelp;
+
+// Copy room code
+$('#copyCode').onclick = ()=>{
+  const code = $('#roomCodeGlobal').textContent.trim();
+  if(!code || code==='—') return;
+  navigator.clipboard.writeText(code).then(()=> toast(t('copied')) );
+};
+
+function renderOverview({ round, trickN, starter, turn, players, roomName, code }){
+  $('#roomName').textContent = roomName ? roomName : '';
+  $('#roomCodeGlobal').textContent = code || '—';
+  $('#ovRound').textContent = `${t('round')} ${round ?? '—'}`;
+  const totalHands = round || '—';
+  $('#ovHand').textContent = `${t('hand_label')} ${trickN ?? 1}/${totalHands}`;
+  const starterName = players?.find(p=>p.id===starter)?.name ?? '—';
+  const turnName = players?.find(p=>p.id===turn)?.name ?? '—';
+  $('#ovStarter').textContent = `${t('starter_label')} ${starterName}`;
+  $('#ovTurn').textContent = `${t('turn_label')} ${turnName}`;
+  // Player chips
+  const bar = document.getElementById('overview');
+  // remove existing chips
+  bar.querySelectorAll('.chips').forEach(x=>x.remove());
+  if(players){
+    const chips = document.createElement('div');
+    chips.className='chips';
+    players.forEach(p=>{
+      const chip=document.createElement('div');
+      chip.className='pill';
+      chip.textContent = `${p.name} · ${t('lives')}: ${p.lives} · ${t('wins')}: ${p.wins||0} · ${t('bid')}: ${p.bid==null?'—':p.bid}`;
+      chips.appendChild(chip);
+    });
+    bar.appendChild(chips);
   }
-});
-
-socketManager.socket.on("player_left", (payload) => {
-  if (payload?.player?.name) {
-    toast.warning(lang.t('player_left', payload.player.name));
-    audio.play('leave');
-    analytics.track('player_left', { playerName: payload.player.name });
-  }
-});
-
-// Enhanced error handling with better feedback
-socketManager.socket.on("error", (payload) => {
-  const message = payload?.message || payload?.error || lang.t('error_occurred');
-  toast.error(message);
-  audio.play('error');
-  analytics.track('error', { message, payload });
-});
-
-/* --- Manejo de visibilidad de página --- */
-document.addEventListener('visibilitychange', () => {
-  analytics.track('visibility_change', { 
-    hidden: document.hidden 
-  });
-  
-  if (!document.hidden) {
-    // Page became visible, check connection
-    if (gameState.connectionState !== 'connected') {
-      toast.show('Checking connection…');
-    }
-  }
-});
-
-/* --- Manejo de eventos de ventana --- */
-window.addEventListener('beforeunload', (e) => {
-  analytics.track('page_unload', {
-    sessionDuration: Date.now() - analytics.sessionStart
-  });
-  
-  // Only show warning if in an active game
-  if (gameState.gamePhase === 'playing' && gameState.room.code) {
-    e.preventDefault();
-    e.returnValue = 'You are in the middle of a game. Are you sure you want to leave?';
-    return e.returnValue;
-  }
-});
-
-window.addEventListener('online', () => {
-  toast.success('Back online');
-  analytics.track('online');
-});
-
-window.addEventListener('offline', () => {
-  toast.warning('Connection lost');
-  analytics.track('offline');
-});
-
-/* --- Inicialización final y cleanup --- */
-document.addEventListener('DOMContentLoaded', () => {
-  analytics.track('dom_ready');
-  
-  // Initialize all systems
-  router.applyRouteFromHash();
-  lang.updateUITexts();
-  
-  // Clean up any stale toasts
-  toast.killStaleToast();
-  
-  console.log('[SG] Client initialized successfully');
-  analytics.track('client_initialized');
-});
-
-// Performance monitoring
-if ('performance' in window && performance.mark) {
-  performance.mark('sg-client-loaded');
 }
 
-/* --- Utilities para desarrolladores --- */
-if (debug.enabled) {
-  // Add helpful global utilities
-  window.SG.utils = {
-    simulateNetworkError: () => {
-      socketManager.socket.disconnect();
-      setTimeout(() => socketManager.socket.connect(), 3000);
-    },
-    
-    fillTestData: () => {
-      const nameInput = $('#playerName') || $('#name');
-      const roomInput = $('#roomCode');
-      if (nameInput) nameInput.value = 'TestPlayer' + Math.floor(Math.random() * 100);
-      if (roomInput) roomInput.value = 'TEST01';
-    },
-    
-    skipToView: (viewId) => {
-      viewManager.goto(viewId);
-      analytics.track('debug_skip_view', { viewId });
+// Socket bindings
+function bindSocket(){
+  setConnectionState(socket.connected);
+  socket.on('connect', ()=> setConnectionState(true));
+  socket.on('disconnect', ()=> setConnectionState(false));
+  socket.on('connect_error', ()=> setConnectionState(false));
+
+  socket.on('room_created', ({ code, host, token, startingLives, roomName })=>{
+    ROOM = code; ME.id = socket.id; ME.name = ($('#playerName').value||'Player').trim(); ME.host = host; ME.token = token;
+    localStorage.setItem('sg_token_'+ROOM, token);
+    $('#roomCodeBadge').textContent = code;
+    $('#roomCodeGlobal').textContent = code;
+    $('#roomName').textContent = roomName || '';
+    show('view-join', false); show('view-lobby', true);
+    show('hostControls', true);
+    $('#startingLives').value = startingLives;
+  });
+
+  socket.on('joined', ({ code, host, token, startingLives, roomName })=>{
+    ROOM = code; ME.id = socket.id; ME.name = ($('#playerName').value||'Player').trim(); ME.host = host; ME.token = token;
+    localStorage.setItem('sg_token_'+ROOM, token);
+    $('#roomCodeBadge').textContent = code;
+    $('#roomCodeGlobal').textContent = code;
+    $('#roomName').textContent = roomName || '';
+    show('view-join', false); show('view-lobby', true);
+  });
+
+  socket.on('room_state', ({ roomName, players, hostId, status, round, startingLives, targetSeats })=>{
+    PLAYERS_CACHE = players || [];
+    const box = document.getElementById('playersLobby'); box.innerHTML='';
+    players.forEach(p=>{
+      const div=document.createElement('div'); div.className='pill';
+      div.textContent = p.isHost ? `★ ${p.name}` : p.name;
+      box.appendChild(div);
+    });
+    if(ME.id===hostId){ show('hostControls', true); }
+    // Update fill hint
+    if(typeof targetSeats==='number' && targetSeats>0){
+      document.getElementById('fillHint').textContent = `${LANG==='es'?'Jugadores':'Players'}: ${players.length} / ${targetSeats}`;
+    } else {
+      document.getElementById('fillHint').textContent = LANG==='es'?'Indica jugadores y vidas y comparte el código.':'Set number of players and lives, then share the code.';
     }
+    renderOverview({ round, trickN: 1, starter: null, turn: null, players, roomName, code: $('#roomCodeGlobal').textContent });
+  });
+
+  // Host config
+  document.getElementById('btnConfigure').onclick = ()=>{
+    const seats = +document.getElementById('seatCount').value|0;
+    const lives = +document.getElementById('startingLives').value|0;
+    socket.emit('configure_room', { roomCode: ROOM, seats, lives });
   };
+  document.getElementById('btnStart').onclick = ()=> socket.emit('start_game', { roomCode: ROOM });
+
+  socket.on('preround_state', ({ roomName, round, firstSpeaker, order, players })=>{
+    CURRENT_ROUND = round;
+    ORDER_CACHE = order || [];
+    PLAYERS_CACHE = players || [];
+    show('view-lobby', false); show('view-summary', false); show('view-preround', true);
+    document.getElementById('hdrRound').textContent = `${t('round')} ${round}`;
+    const badges = document.getElementById('orderBadges'); badges.innerHTML='';
+    order.forEach((o,i)=>{ const d=document.createElement('div'); d.className='pill'; d.textContent=(i===0?'▶ ':'')+o.name; badges.appendChild(d); });
+    const fs = order.find(o=>o.id===firstSpeaker); document.getElementById('firstSpeakerNote').textContent = `${t('first_speaker')}: ${fs? fs.name : '—'}`;
+    renderOverview({ round, trickN: 1, starter: firstSpeaker, turn: firstSpeaker, players, roomName, code: $('#roomCodeGlobal').textContent });
+  });
+
+  // Private hand after dealing
+  socket.on('private_hand', ({ hand })=>{ MY_HAND = hand; });
+
+  socket.on('bids_state', ({ roomName, round, current, sum, lastSpeaker, bids, players })=>{
+    CURRENT_ROUND = round;
+    PLAYERS_CACHE = players || [];
+    show('view-preround', false); show('view-play', false); show('view-bids', true);
+    document.getElementById('hdrBids').textContent = `${t('round')} ${round} — ${t('bid')}`;
+    const area = document.getElementById('bidsArea'); area.innerHTML='';
+    const meTurn = (current===socket.id);
+    const p = document.createElement('div');
+    p.className = 'state-row';
+    p.innerHTML = `<div class="pill">${t('current')}: ${meTurn? t('you') : t('opponent')}</div><div class="pill">${t('total_so_far')}: ${sum}</div>`;
+    area.appendChild(p);
+
+    // Show list of bids so far
+    const list=document.createElement('ul'); list.className='bidslist';
+    (bids||[]).forEach(b=>{
+      const li=document.createElement('li');
+      li.textContent = `${b.name}: ${b.bid==null?'—':b.bid}`;
+      list.appendChild(li);
+    });
+    area.appendChild(list);
+
+    renderOverview({ round, trickN: 1, starter: current, turn: current, players, roomName, code: $('#roomCodeGlobal').textContent });
+  });
+
+  socket.on('bid_prompt', ({ round, seeCards, hand, min, max, sum, lastSpeaker })=>{
+    const area = document.getElementById('bidsArea');
+    area.innerHTML='';
+    const h = document.createElement('div'); h.className='cards'; area.appendChild(h);
+    if(seeCards){ hand.forEach(c => h.appendChild(cardNode(c))); }
+    else { const b=document.createElement('div'); b.className='card back'; b.innerHTML=`<div class="rank">★</div><div class="suit">${LANG==='es'?'Oculta':'Hidden'}</div>`; h.appendChild(b); }
+
+    const row = document.createElement('div'); row.className='row';
+    const inp = document.createElement('input'); inp.type='number'; inp.min=String(min); inp.max=String(max); inp.value='0'; inp.style.maxWidth='120px';
+    const btn = document.createElement('button'); btn.textContent=t('confirm_bid');
+    const info=document.createElement('div'); info.className='pill'; info.textContent = `${t('total_so_far')}: ${sum}`;
+    row.append(inp, btn, info); area.appendChild(row);
+
+    btn.onclick = ()=>{
+      const v = Math.max(min, Math.min(max, (+inp.value||0)));
+      socket.emit('submit_bid', { roomCode: ROOM, value: v });
+    };
+  });
+
+  socket.on('r1_state', ({ roomName, order })=>{
+    ORDER_CACHE = order || [];
+    show('view-preround', false); show('view-play', false); show('view-bids', true);
+    document.getElementById('hdrBids').textContent = `${t('round')} 1 — ${t('instructions')}`;
+    const area = document.getElementById('bidsArea'); area.innerHTML = `<p class="muted">${LANG==='es'?'Mira las cartas de los demás y responde Sí/No.':'Look at others\' cards and answer Yes/No.'}</p>`;
+  });
+
+  socket.on('r1_prompt', ({ others, order })=>{
+    const area = document.getElementById('bidsArea'); area.innerHTML='';
+    const count = Object.keys(others).length;
+    const title = document.createElement('h3');
+    title.textContent = count===1 ? t('your_opponent_card') : t('opponents_cards');
+    area.appendChild(title);
+    const wrap=document.createElement('div'); wrap.className='cards';
+    // label with names
+    const idToName = {}; (order||[]).forEach(o=> idToName[o.id]=o.name);
+    for(const [pid,card] of Object.entries(others)){
+      const holder=document.createElement('div'); holder.className='cardwrap';
+      const label=document.createElement('div'); label.className='small'; label.textContent = idToName[pid] || '—';
+      holder.appendChild(label);
+      holder.appendChild(cardNode(card));
+      wrap.appendChild(holder);
+    }
+    area.appendChild(wrap);
+    const row=document.createElement('div'); row.className='row';
+    const yes=document.createElement('button'); yes.textContent=t('yes');
+    const no=document.createElement('button'); no.textContent=t('no'); no.className='secondary';
+    row.append(yes,no); area.appendChild(row);
+    yes.onclick=()=> socket.emit('r1_answer', { roomCode: ROOM, answer:'YES' });
+    no.onclick =()=> socket.emit('r1_answer', { roomCode: ROOM, answer:'NO'  });
+  });
+
+  socket.on('r1_reveal', ({ table, winner })=>{
+    show('view-bids', false); show('view-play', true);
+    const tbox=document.getElementById('table'); tbox.innerHTML='';
+    table.forEach(pl=>{ const box=document.createElement('div'); box.className='playbox'; box.appendChild(cardNode(pl.card)); tbox.appendChild(box); });
+  });
+
+  socket.on('play_state', ({ roomName, round, starter, turn, trickN, table, summary, players })=>{
+    CURRENT_ROUND = round;
+    PLAYERS_CACHE = players || [];
+    show('view-bids', false); show('view-summary', false); show('view-play', true);
+
+    // Fill table
+    const t=document.getElementById('table'); t.innerHTML='';
+    table.forEach(pl=>{ const box=document.createElement('div'); box.className='playbox'; box.appendChild(cardNode(pl.card)); t.appendChild(box); });
+
+    // Summary
+    const sb=document.getElementById('sumBody'); sb.innerHTML='';
+    summary.forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML = `<td>${escapeHTML(r.name)}</td><td>${r.wins}</td><td>${r.askDelta}</td><td>${r.lives}</td><td>${r.bid==null?'—':r.bid}</td>`;
+      sb.appendChild(tr);
+    });
+
+    // My hand
+    const mh=document.getElementById('myHand'); mh.innerHTML='';
+    if(turn===socket.id){
+      (MY_HAND||[]).forEach(c=> mh.appendChild(cardNode(c, ()=>{
+        socket.emit('play_card', { roomCode: ROOM, card: c });
+      })) );
+      document.getElementById('playHint').textContent=t('pick_card');
+    } else {
+      (MY_HAND||[]).forEach(c=> mh.appendChild(cardNode(c)) );
+      document.getElementById('playHint').textContent=t('waiting');
+    }
+
+    // Overview bar
+    renderOverview({ round, trickN, starter, turn, players, roomName, code: $('#roomCodeGlobal').textContent });
+  });
+
+  // Update my hand immediately after I play
+  socket.on('your_turn', ({ hand })=>{ MY_HAND = hand; });
+  socket.on('table_update', ({ pid, card })=>{
+    if(pid === socket.id){
+      const idx = MY_HAND.indexOf(card);
+      if(idx !== -1) MY_HAND.splice(idx, 1);
+      const mh = document.getElementById('myHand');
+      if(mh){
+        mh.innerHTML='';
+        (MY_HAND||[]).forEach(c=> mh.appendChild(cardNode(c)) );
+        const hint = document.getElementById('playHint');
+        if(hint) hint.textContent = t('waiting');
+      }
+    }
+  });
+
+  // Hand log / mini-summary
+  socket.on('trick_result', ({ plays, winner, winningCard, tieBreak })=>{
+    const box = document.getElementById('handLog');
+    const entry = document.createElement('div');
+    entry.className='logentry';
+    // list plays in order
+    const ul=document.createElement('ul');
+    plays.sort((a,b)=>a.order-b.order).forEach(pl=>{
+      const name = (PLAYERS_CACHE.find(p=>p.id===pl.pid)||{}).name || '—';
+      const li=document.createElement('li');
+      const rank = pl.card[0]==='T' ? '10' : pl.card[0];
+      li.textContent = `${name} → ${rank}${pl.card[1]}`;
+      ul.appendChild(li);
+    });
+    entry.appendChild(ul);
+    // reason
+    const winName = (PLAYERS_CACHE.find(p=>p.id===winner.id)||{}).name || winner.name;
+    const rank = winningCard[0]==='T' ? '10' : winningCard[0];
+    const reason = document.createElement('div');
+    reason.className='muted';
+    reason.textContent = tieBreak
+      ? `${winName} wins: tie at ${rank}, played first.`
+      : `${winName} wins with ${rank}.`;
+    if(LANG==='es'){
+      reason.textContent = tieBreak
+        ? `${winName} gana: empate en ${rank}, jugó primero.`
+        : `${winName} gana con ${rank}.`;
+    }
+    entry.appendChild(reason);
+    box.appendChild(entry);
+    // auto-scroll
+    box.scrollTop = box.scrollHeight;
+  });
+
+  socket.on('round_summary', ({ round, rows, over, winner })=>{
+    show('view-play', false); show('view-summary', true);
+    const box=document.getElementById('roundBox');
+    let html = `<div class="pill">${t('round')} ${round} ✓</div><div class="divider"></div>`;
+    html += '<div class="table-scroll"><table class="summary"><thead><tr><th>'+t('player')+'</th><th>'+t('wins')+'</th><th>'+t('bid')+'</th><th>'+t('lives')+'</th><th>'+t('status')+'</th></tr></thead><tbody>';
+    rows.forEach(r=>{ html += `<tr><td>${escapeHTML(r.name)}</td><td>${r.wins??'—'}</td><td>${r.bid??'—'}</td><td>${r.lives}</td><td>${r.eliminated?t('out'):''}</td></tr>`; });
+    html += '</tbody></table></div>';
+    if(over){
+      const endText = winner ? t('wins_game')(escapeHTML(winner.name)) : t('game_over');
+      html += '<div class="divider"></div><h2>'+endText+'</h2>';
+      document.getElementById('btnNextRound').disabled=true;
+    } else {
+      document.getElementById('btnNextRound').disabled=false;
+    }
+    box.innerHTML = html;
+    // clear hand log for next round
+    const log = document.getElementById('handLog'); if(log) log.innerHTML='';
+  });
+
+  document.getElementById('btnNextRound').onclick = ()=> socket.emit('next_round', { roomCode: ROOM });
+  socket.on('error_msg', ({ message })=> toast(message));
 }
+
+// Initial i18n update
+applyI18n();

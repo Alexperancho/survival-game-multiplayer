@@ -4,65 +4,73 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Survival Game — Online</title>
-  <meta name="theme-color" content="#000000" />
+  <meta name="theme-color" content="#11170f" />
+  <meta name="description" content="Create a private room and play Survival Game online with friends." />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icons/favicon.ico" sizes="any" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-  <link rel="stylesheet" href="/styles.css" />
-  
-  <!-- Fix para ocultar modales no deseados -->
-  <style>
-    /* Asegurar que los modales estén completamente ocultos por defecto */
-    .modal.hidden {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
+  <link rel="stylesheet" href="/styles.css">
+  <script>
+    const sgProductionHosts = [
+      "survival.fun",
+      "www.survival.fun",
+      "survivalgame.fun",
+      "www.survivalgame.fun"
+    ];
+    const sgDefaultApiHost = window.location.hostname.endsWith("survivalgame.fun")
+      ? "https://api.survivalgame.fun"
+      : "https://api.survival.fun";
+    const sgDefaultBackend = sgProductionHosts.includes(window.location.hostname)
+      ? sgDefaultApiHost
+      : "";
+    window.SG_CONFIG = {
+      backendUrl: window.SG_BACKEND_URL || sgDefaultBackend,
+      backendTransport: window.SG_BACKEND_TRANSPORT || (sgDefaultBackend ? "websocket" : "")
+    };
+  </script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+  <script>
+    if (!window.io) {
+      document.write('<script src="/socket.io/socket.io.js"><\/script>');
     }
-
-    /* Asegurar que las notificaciones estén ocultas */
-    .center-notice.hidden,
-    .toast.hidden {
-      display: none !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-    }
-
-    /* Ocultar botones de cierre de elementos ocultos */
-    .hidden .close {
-      display: none !important;
-    }
-
-    /* Asegurar que todos los elementos con clase hidden estén ocultos */
-    .hidden {
-      display: none !important;
-    }
-
-    /* Ocultar específicamente los modales por defecto */
-    #introModal,
-    #roundModal,
-    #centerNotice,
-    #toast {
-      display: none !important;
-    }
-
-    /* Solo mostrar cuando tengan clase 'show' */
-    #introModal.show,
-    #roundModal.show,
-    #centerNotice.show,
-    #toast.show {
-      display: block !important;
-    }
-  </style>
+  </script>
 </head>
 <body>
-  <div class="wrap">
-    <!-- JOIN -->
+  <!-- Global overview bar -->
+  <header id="overview" class="overview">
+    <div class="left">
+      <span class="brand">Survival Game</span>
+      <span id="roomName" class="roomname"></span>
+      <span id="roomCodeGlobal" class="pill code">—</span>
+      <button id="copyCode" class="mini" type="button">Copy</button>
+    </div>
+    <div class="center">
+      <span id="ovRound" class="pill">Round —</span>
+      <span id="ovHand" class="pill">Hand —/—</span>
+      <span id="ovStarter" class="pill">Starter —</span>
+      <span id="ovTurn" class="pill">Turn —</span>
+    </div>
+    <div class="right">
+      <span id="connState" class="status offline">Offline</span>
+      <button id="btnRoundHelp" class="mini icon" type="button" aria-label="Round help">?</button>
+      <select id="langSelect" aria-label="Language">
+        <option value="en">EN</option>
+        <option value="es">ES</option>
+      </select>
+      <button id="btnIntro" class="mini" type="button">Instructions</button>
+    </div>
+  </header>
+
+  <main class="wrap">
     <section id="view-join" class="panel">
-      <h1 data-i18n="welcome_title">Welcome</h1>
+      <div class="section-head">
+        <p class="eyebrow">Online card survival</p>
+        <h1 data-i18n="welcome_title">Survival Game</h1>
+      </div>
       <div class="grid3">
         <div>
           <label data-i18n="your_name">Your name</label>
-          <input id="playerName" maxlength="20" placeholder="Alice" />
+          <input id="playerName" maxlength="20" placeholder="Alice" autocomplete="nickname" />
         </div>
         <div>
           <label data-i18n="room_name_opt">Room name (optional)</label>
@@ -73,24 +81,20 @@
           <input id="roomCode" maxlength="8" placeholder="e.g. ZETA42" />
         </div>
       </div>
-      <div class="row" style="margin-top:8px">
-        <button id="createRoomBtn" data-i18n="create_room">Create room</button>
-        <button id="joinRoomBtn" class="secondary" data-i18n="join_room">Join room</button>
-        <select id="langSelect" style="max-width:120px">
-          <option value="en">EN</option>
-          <option value="es">ES</option>
-        </select>
-        <button id="btnOpenIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
+      <div class="row actions">
+        <button id="btnCreate" data-i18n="create_room" type="button">Create room</button>
+        <button id="btnJoin" class="secondary" data-i18n="join_room" type="button">Join room</button>
+        <button id="btnOpenIntro" class="ghost mini" data-i18n="intro_button" type="button">Instructions</button>
       </div>
-      <p class="muted" data-i18n="join_hint">Create a new room (we'll generate the code), or join an existing one with its code.</p>
+      <p class="muted" data-i18n="join_hint">Create a room or enter a code.</p>
     </section>
 
-    <!-- LOBBY -->
     <section id="view-lobby" class="panel hidden">
-      <h1><span data-i18n="lobby">Lobby</span> <span id="roomCodeBadge" class="pill"></span></h1>
-      <div id="playersLobby" class="row"></div>
-
-      <div id="hostControls" class="">
+      <div class="section-head inline">
+        <h1><span data-i18n="lobby">Lobby</span> <span id="roomCodeBadge" class="pill code"></span></h1>
+      </div>
+      <div id="playersLobby" class="row player-strip"></div>
+      <div id="hostControls" class="hidden">
         <div class="grid2">
           <div>
             <label data-i18n="num_players">Number of players (2–10)</label>
@@ -101,149 +105,74 @@
             <input id="startingLives" type="number" min="1" max="99" value="7" />
           </div>
         </div>
-
-        <div class="row" style="margin-top:8px">
-          <button id="btnConfigure" data-i18n="apply_settings">Apply settings</button>
-          <button id="btnStart" class="secondary" data-i18n="start_now">Start now (manual)</button>
-          <button id="btnLobbyIntro" class="secondary mini" data-i18n="intro_button">Instructions</button>
+        <div class="row actions">
+          <button id="btnConfigure" data-i18n="apply_settings" type="button">Apply settings</button>
+          <button id="btnStart" class="secondary" data-i18n="start_now" type="button">Start now (manual)</button>
         </div>
-
         <p class="muted" id="fillHint"></p>
       </div>
-
       <p class="muted" data-i18n="share_hint">Share this page + room code with your friends.</p>
     </section>
 
-    <!-- PRE-ROUND -->
     <section id="view-preround" class="panel hidden">
-      <h1 id="hdrRound">Round</h1>
+      <div class="section-head inline">
+        <h1 id="hdrRound">Round</h1>
+      </div>
       <div class="row" id="orderBadges"></div>
       <div class="muted" id="firstSpeakerNote"></div>
     </section>
 
-    <!-- BIDS -->
     <section id="view-bids" class="panel hidden">
-      <h1 id="hdrBids">Bidding</h1>
+      <div class="section-head inline">
+        <h1 id="hdrBids">Bidding</h1>
+      </div>
       <div id="bidsArea"></div>
     </section>
 
-    <!-- PLAY -->
     <section id="view-play" class="panel hidden">
-      <div class="row">
+      <div class="section-head inline">
         <h1 data-i18n="play">Play</h1>
-        <div id="turnBadge" class="turn-badge hidden">Your turn</div>
       </div>
-
       <div class="table" id="table"></div>
-
       <h3 data-i18n="your_hand">Your hand</h3>
       <div class="cards" id="myHand"></div>
-      <div id="playHint" class="turn-hint muted" style="margin-top:6px"></div>
-
+      <div id="playHint" class="muted play-hint"></div>
       <div class="divider"></div>
-
       <h3 data-i18n="summary">Summary</h3>
-      <table class="summary">
-        <thead>
-          <tr>
-            <th data-i18n="player">Player</th>
-            <th data-i18n="wins">Wins</th>
-            <th data-i18n="ask_delta">Ask Δ</th>
-            <th data-i18n="lives">Lives</th>
-            <th data-i18n="bid">Bid</th>
-          </tr>
-        </thead>
-        <tbody id="sumBody"></tbody>
-      </table>
-
+      <div class="table-scroll">
+        <table class="summary"><thead><tr><th data-i18n="player">Player</th><th data-i18n="wins">Wins</th><th data-i18n="ask_delta">Ask Δ</th><th data-i18n="lives">Lives</th><th data-i18n="bid">Bid</th></tr></thead><tbody id="sumBody"></tbody></table>
+      </div>
       <div class="divider"></div>
-
       <h3 data-i18n="hand_log">Hand log</h3>
       <div id="handLog" class="handlog"></div>
     </section>
 
-    <!-- ROUND SUMMARY -->
     <section id="view-summary" class="panel hidden">
-      <h1 data-i18n="round_summary">Round summary</h1>
+      <div class="section-head inline">
+        <h1 data-i18n="round_summary">Round summary</h1>
+      </div>
       <div id="roundBox"></div>
-      <div class="row"><button id="btnNextRound" data-i18n="next_round">Next round</button></div>
+      <div class="row actions"><button id="btnNextRound" data-i18n="next_round" type="button">Next round</button></div>
     </section>
-  </div>
+  </main>
 
   <!-- Intro / Instructions Modal -->
-  <div id="introModal" class="modal hidden">
+  <div id="introModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content">
-      <button class="close" id="closeIntro">×</button>
+      <button class="close" id="closeIntro" type="button" aria-label="Close">×</button>
       <div id="introBody"></div>
     </div>
   </div>
 
   <!-- Round Help Modal -->
-  <div id="roundModal" class="modal hidden">
+  <div id="roundModal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content">
-      <button class="close" id="closeRound">×</button>
+      <button class="close" id="closeRound" type="button" aria-label="Close">×</button>
       <div id="roundBody"></div>
     </div>
   </div>
 
-  <!-- Avisos -->
-  <div id="centerNotice" class="center-notice hidden"></div>
-  <div id="toast" class="toast hidden"></div>
-
-  <!-- Script para inicializar correctamente los modales -->
-  <script>
-    // Ejecutar inmediatamente para evitar que aparezcan los modales
-    document.addEventListener('DOMContentLoaded', function() {
-      // Asegurar que todos los modales estén ocultos al cargar la página
-      const modals = document.querySelectorAll('.modal');
-      modals.forEach(modal => {
-        modal.classList.add('hidden');
-        modal.style.display = 'none';
-      });
-      
-      // Asegurar que las notificaciones estén ocultas
-      const notices = document.querySelectorAll('.center-notice, .toast');
-      notices.forEach(notice => {
-        notice.classList.add('hidden');
-        notice.style.display = 'none';
-      });
-      
-      // Ocultar específicamente los elementos problemáticos
-      const elementsToHide = ['introModal', 'roundModal', 'centerNotice', 'toast'];
-      elementsToHide.forEach(id => {
-        const element = document.getElementById(id);
-        if (element) {
-          element.classList.add('hidden');
-          element.style.display = 'none';
-        }
-      });
-    });
-
-    // Funciones para mostrar/ocultar modales correctamente
-    window.showModal = function(modalId) {
-      const modal = document.getElementById(modalId);
-      if (modal) {
-        modal.classList.remove('hidden');
-        modal.classList.add('show');
-        modal.style.display = 'block';
-      }
-    };
-
-    window.hideModal = function(modalId) {
-      const modal = document.getElementById(modalId);
-      if (modal) {
-        modal.classList.add('hidden');
-        modal.classList.remove('show');
-        modal.style.display = 'none';
-      }
-    };
-  </script>
-
-  <!-- 1) Socket.IO (CDN) -->
-  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
-  <!-- 2) Fuerza backend de Railway -->
-  <script defer src="/socket-override.js"></script>
-  <!-- 3) Lógica del cliente -->
-  <script defer src="/client.js"></script>
+  <div id="toast" class="toast hidden" aria-live="polite"></div>
+  <script src="/client.js"></script>
 </body>
 </html>
